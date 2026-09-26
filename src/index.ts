@@ -17,6 +17,10 @@ class Simulator {
         this.scope = {};
     }
 
+    getScope() {
+        return this.scope;
+    }
+
     constructor() {
         this.reset();
     }
@@ -85,10 +89,11 @@ class Process extends Shape {
 }
 
 class InputOutput extends Process {
-    
+
 }
 
 var shapes: Shape[] = [];
+const sim = new Simulator();
 btn.addEventListener('click', () => {
     const newShape = new Shape(50, 50);
     chart.appendChild(newShape.element);
