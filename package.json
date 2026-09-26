@@ -1,0 +1,12 @@
+{
+  "devDependencies": {
+    "typescript": "^7.0.2"
+  },
+  "scripts": {
+    "watch": "tsc --watch"
+  },
+  "dev": "tsc --watch",
+  "dependencies": {
+    "@nyariv/sandboxjs": "^0.9.7"
+  }
+}

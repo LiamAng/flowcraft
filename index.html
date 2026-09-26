@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+    <style>
+        * {
+            user-select: none;
+        }
+        .chart {
+            width: 100vw;
+            height: 100vh;
+        }
+
+        .shape {
+            position:absolute;
+            background-color: red;
+            min-width: 50px;
+            min-height: 20px;
+        }
+
+        .button {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+        }
+    </style>
+</head>
+<body>
+    <button id="btn">Add shape</button>
+    <div class="chart">
+    </div>
+    <script src="dist/index.js"></script>
+</body>
+</html>
