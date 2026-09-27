@@ -8,27 +8,72 @@
         * {
             user-select: none;
         }
+
         .chart {
             width: 100vw;
             height: 100vh;
+            background: url(https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/refs/heads/26.1/assets/minecraft/textures/block/dirt.png);
+            background-size: 32px 32px;
+            background-repeat: repeat;
+            image-rendering: pixelated;
         }
-
+        
         .shape {
             position:absolute;
-            background-color: red;
-            min-width: 50px;
-            min-height: 20px;
+            border-image-source: url(https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/refs/heads/26.1/assets/minecraft/textures/gui/sprites/hud/hotbar_selection.png);
+            border-image-slice: 4 fill;
+            border-width: 6px;
+            border-image-repeat: repeat;
+            image-rendering: pixelated;
+            border-style: solid;
+            background-color: rgba(0, 0, 0, .5);
+            color: white;
+            display: inline-block;
+            white-space: nowrap;
+            .content {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                padding: 10px;
+                min-width: 50px;
+                &:focus {
+                    outline: none;
+                }
+            }
         }
 
-        .button {
-            position: absolute;
+        .diamond {
+            transform: rotate(-45deg);
+            &> * { 
+                transform: rotate(45deg);
+            }
+            .content {
+                aspect-ratio: 1/1;
+            }
+        }
+
+        .parallelogram {
+            transform: skew(-15deg);
+            &> * { 
+                transform: skew(15deg);
+            }
+        }
+        
+        .controls {
+            display: flex;
             top: 10px;
             left: 10px;
+            gap: 5px
         }
     </style>
 </head>
 <body>
-    <button id="btn">Add shape</button>
+    <div class="controls">
+        <button id="process">Process</button>
+        <button id="decision">Decision</button>
+        <button id="input-output">InputOutput</button>
+        <button id="mode">Switch Mode</button>
+    </div>
     <div class="chart">
     </div>
     <script src="src/index.ts" type="module"></script>
