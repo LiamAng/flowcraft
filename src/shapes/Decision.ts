@@ -1,0 +1,36 @@
+import { Shape, ResizeDirection } from "./Shape";
+
+export class Decision extends Shape {
+    protected override getResizeDirections(): ResizeDirection[] {
+        return ["n", "s", "e", "w"];
+    }
+
+    protected override getVerticalPadding(): number {
+        return this.height * 0.25;
+    }
+
+    protected override shouldKeepWidthFixedOnVerticalResize(): boolean {
+        return true;
+    }
+
+    protected override getLinkLimit(): number {
+        return 2;
+    }
+
+    protected override constrainResize(nextWidth: number, nextHeight: number, startHeight: number, startWidth: number): { width: number; height: number } {
+        nextWidth = Math.max(Shape.MIN_DRAG, Math.min(nextWidth, Shape.MAX_SIZE));
+        nextWidth = Math.max(nextWidth, this.minWidthForHeight(nextHeight, nextWidth));
+
+        if (this.contentHeightFor(nextWidth) > nextHeight) {
+            nextHeight = Math.max(nextHeight, this.contentHeightFor(nextWidth));
+        }
+
+        return { width: nextWidth, height: nextHeight };
+    }
+
+    constructor() {
+        super();
+        this.content.classList.add("diamond");
+        this.updateResizeHandles();
+    }
+}

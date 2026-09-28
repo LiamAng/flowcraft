@@ -1,4 +1,4 @@
-import { Shape, Process, Decision, InputOutput } from "./shape";
+import { Shape, Process, Decision, InputOutput } from "./shapes";
 import { Simulator } from "./simulator";
 
 const process: HTMLButtonElement = document.getElementById('process') as HTMLButtonElement;
@@ -7,9 +7,8 @@ const inputOutput: HTMLButtonElement = document.getElementById('input-output') a
 
 export const chart: HTMLElement = document.querySelector('.chart') as HTMLElement;
 
-const params: URLSearchParams = new URLSearchParams(window.location.search);
-var shapes: Shape[] = [];
-const sim = new Simulator();
+const shapes: Shape[] = [];
+
 process.addEventListener('click', () => {
     const newShape = new Process();
     chart.appendChild(newShape.element);
