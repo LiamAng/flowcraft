@@ -1,3 +1,5 @@
+import { Router, roundedPath, labelPoint, type Side, type RouteTarget, type RouteObstacle } from "../router";
+
 export type ResizeDirection = "n" | "s" | "e" | "w" | "ne" | "nw" | "se" | "sw";
 export type LinkDirection = "n" | "s" | "e" | "w";
 
@@ -15,6 +17,15 @@ export class Shape {
     public static connections: LinkRecord[] = [];
     public static linkLayer: SVGSVGElement | null = null;
     public static labelLayer: HTMLDivElement | null = null;
+    public static all: Shape[] = [];
+    protected static router = new Router();
+    public static readonly DEFAULT_SIZE = 80;
+    public static ghostLayer: SVGSVGElement | null = null;
+    protected static pointer = { x: 0, y: 0 };
+    protected static hover: Shape | null = null;
+    protected static ghostFrozen = false;
+    protected static tracking = false;
+    protected static ghostTarget = {};
 
     public element: HTMLElement;
     public content: HTMLElement;
@@ -72,6 +83,12 @@ export class Shape {
         return { x: this.width, y: this.height };
     }
 
+    setCenter(x: number, y: number) {
+        this.posX = x - this.width / 2;
+        this.posY = y - this.height / 2;
+        this.apply();
+    }
+
     setDraggable(draggable: boolean) {
         this.draggable = draggable;
     }
@@ -79,6 +96,11 @@ export class Shape {
     protected apply() {
         const chart = document.querySelector(".chart") as HTMLElement | null;
         const bounds = chart ?? document.body;
+
+        const maxX = bounds.clientWidth - this.width;
+        const maxY = bounds.clientHeight - this.height;
+        this.posX = Math.max(0, Math.min(this.posX, maxX));
+        this.posY = Math.max(0, Math.min(this.posY, maxY));
 
         this.element.style.left = `${this.posX}px`;
         this.element.style.top = `${this.posY}px`;
@@ -90,10 +112,6 @@ export class Shape {
             this.content.style.clipPath = "polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%)";
         }
 
-        const maxX = bounds.clientWidth - this.width;
-        const maxY = bounds.clientHeight - this.height;
-        this.posX = Math.max(0, Math.min(this.posX, maxX));
-        this.posY = Math.max(0, Math.min(this.posY, maxY));
         Shape.renderConnections();
     }
 
@@ -138,8 +156,7 @@ export class Shape {
                 return;
             }
 
-            const used = this.outgoingLinks.some((link) => link.direction === dir);
-            handle.style.display = used ? "none" : "";
+            handle.style.display = "";
         });
     }
 
@@ -153,6 +170,47 @@ export class Shape {
 
     protected getOutgoingLinkCount(): number {
         return this.outgoingLinks.length;
+    }
+
+    protected static getOccupiedLinkSidesFor(shape: Shape): Set<LinkDirection> {
+        const occupied = new Set<LinkDirection>();
+
+        shape.outgoingLinks.forEach((link) => {
+            occupied.add(link.direction);
+        });
+
+        Shape.connections.forEach((link) => {
+            if (link.from === shape) {
+                occupied.add(link.direction);
+            }
+        });
+
+        return occupied;
+    }
+
+    protected static buildAnchorsAvoidingBlocked(shape: Shape): Record<Side, { x: number; y: number }> {
+        const blocked = Shape.getOccupiedLinkSidesFor(shape);
+        const anchors = {
+            n: Shape.getLinkAnchor(shape, "n"),
+            e: Shape.getLinkAnchor(shape, "e"),
+            s: Shape.getLinkAnchor(shape, "s"),
+            w: Shape.getLinkAnchor(shape, "w"),
+        } as Record<Side, { x: number; y: number }>;
+
+        (Object.keys(anchors) as Side[]).forEach((side) => {
+            if (!blocked.has(side)) {
+                return;
+            }
+
+            const point = anchors[side];
+            const offset = side === "n" ? { x: 0, y: -9999 }
+                : side === "e" ? { x: 9999, y: 0 }
+                : side === "s" ? { x: 0, y: 9999 }
+                : { x: -9999, y: 0 };
+            anchors[side] = { x: point.x + offset.x, y: point.y + offset.y };
+        });
+
+        return anchors;
     }
 
     protected canAcceptLink(): boolean {
@@ -172,16 +230,27 @@ export class Shape {
         const record: LinkRecord = { from: this, to: target, direction, label };
         Shape.connections.push(record);
         this.outgoingLinks.push({ direction, label, to: target });
-        this.updateLinkHandles();
+        Shape.all.forEach((shape) => shape.updateLinkHandles());
+        Shape.renderConnections();
+    }
+
+    public static removeConnection(connection: LinkRecord) {
+        Shape.connections = Shape.connections.filter((link) => link !== connection);
+        connection.from.outgoingLinks = connection.from.outgoingLinks.filter((link) => link.to !== connection.to || link.direction !== connection.direction);
+        Shape.all.forEach((shape) => shape.updateLinkHandles());
         Shape.renderConnections();
     }
 
     protected onLink(direction: LinkDirection) {
-        if (Shape.pendingLink && Shape.pendingLink.source !== this) {
-            const pending = Shape.pendingLink;
-            pending.source.connectTo(this, pending.direction, "");
-            Shape.pendingLink = null;
-            this.element.classList.remove("linking");
+        const pending = Shape.pendingLink;
+
+        if (pending && pending.source !== this) {
+            Shape.completeLink(this);
+            return;
+        }
+
+        if (pending && pending.source === this && pending.direction === direction) {
+            Shape.cancelLink();
             return;
         }
 
@@ -193,8 +262,212 @@ export class Shape {
             return;
         }
 
-        Shape.pendingLink = { source: this, direction };
-        this.element.classList.add("linking");
+        Shape.startLink(this, direction);
+    }
+
+    public static isLinking(): boolean {
+        return Shape.pendingLink !== null;
+    }
+
+    public static startLink(source: Shape, direction: LinkDirection) {
+        Shape.clearLinkVisuals();
+        Shape.pendingLink = { source, direction };
+        Shape.ghostFrozen = false;
+        Shape.hover = null;
+        source.element.classList.add("linking");
+        document.querySelector(".chart")?.classList.add("linking-mode");
+        Shape.trackPointer();
+        Shape.renderGhost();
+        Shape.announceLinkState();
+    }
+
+    public static completeLink(target: Shape) {
+        const pending = Shape.pendingLink;
+        if (!pending || pending.source === target) {
+            return;
+        }
+        pending.source.connectTo(target, pending.direction, "");
+        Shape.endLink();
+    }
+
+    public static cancelLink() {
+        if (Shape.pendingLink) {
+            Shape.endLink();
+        }
+    }
+
+    public static freezeGhostAt(x: number, y: number) {
+        Shape.hover?.element.classList.remove("link-target");
+        Shape.hover = null;
+        Shape.pointer = { x, y };
+        Shape.ghostFrozen = true;
+        Shape.renderGhost();
+    }
+
+    public static unfreezeGhost() {
+        if (Shape.ghostFrozen) {
+            Shape.ghostFrozen = false;
+            Shape.renderGhost();
+        }
+    }
+
+    protected static endLink() {
+        Shape.clearLinkVisuals();
+        Shape.pendingLink = null;
+        Shape.ghostFrozen = false;
+        Shape.hover = null;
+        document.querySelector(".chart")?.classList.remove("linking-mode");
+        Shape.renderGhost();
+        Shape.announceLinkState();
+    }
+
+    protected static clearLinkVisuals() {
+        Shape.all.forEach((shape) => shape.element.classList.remove("linking", "link-target"));
+    }
+
+    protected static announceLinkState() {
+        document.dispatchEvent(new CustomEvent("flowcraft:linkstate", { detail: { active: Shape.pendingLink !== null } }));
+    }
+
+    protected static trackPointer() {
+        if (Shape.tracking) {
+            return;
+        }
+        Shape.tracking = true;
+
+        document.addEventListener("pointermove", (event: PointerEvent) => {
+            const pending = Shape.pendingLink;
+            if (!pending || Shape.ghostFrozen) {
+                return;
+            }
+
+            Shape.pointer = { x: event.clientX, y: event.clientY };
+            const el = event.target instanceof Element ? event.target.closest(".shape") : null;
+            const hovered = el ? Shape.all.find((shape) => shape.element === el && shape !== pending.source) ?? null : null;
+
+            if (hovered !== Shape.hover) {
+                Shape.hover?.element.classList.remove("link-target");
+                hovered?.element.classList.add("link-target");
+                Shape.hover = hovered;
+            }
+            Shape.renderGhost();
+        });
+    }
+
+    protected static renderGhost() {
+        const layer = Shape.ghostLayer;
+        if (!layer) {
+            return;
+        }
+
+        layer.innerHTML = "";
+        const pending = Shape.pendingLink;
+        const chart = document.querySelector(".chart") as HTMLElement | null;
+        if (!pending || !chart) {
+            return;
+        }
+
+        const ns = "http://www.w3.org/2000/svg";
+        const accent = "#6495ed";
+        const size = Shape.DEFAULT_SIZE;
+        const bounds = { width: chart.clientWidth, height: chart.clientHeight };
+        const obstacles: RouteObstacle[] = Shape.all.map((shape) => ({
+            shape,
+            rect: { x: shape.posX, y: shape.posY, w: shape.width, h: shape.height },
+        }));
+        const rectAnchors = (r: { x: number; y: number; w: number; h: number }) => ({
+            n: { x: r.x + r.w / 2, y: r.y },
+            e: { x: r.x + r.w, y: r.y + r.h / 2 },
+            s: { x: r.x + r.w / 2, y: r.y + r.h },
+            w: { x: r.x, y: r.y + r.h / 2 },
+        }) as Record<Side, { x: number; y: number }>;
+
+        layer.appendChild(Shape.createArrowDefs("ghost-arrow-head", accent));
+
+        const source = pending.source;
+        const start = Shape.getLinkAnchor(source, pending.direction);
+        const p = Shape.pointer;
+        let target: RouteTarget;
+        let arrow = true;
+
+        if (Shape.hover) {
+            const h = Shape.hover;
+            target = {
+                shape: h,
+                anchors: {
+                    n: Shape.getLinkAnchor(h, "n"),
+                    e: Shape.getLinkAnchor(h, "e"),
+                    s: Shape.getLinkAnchor(h, "s"),
+                    w: Shape.getLinkAnchor(h, "w"),
+                },
+            };
+        } else if (Shape.ghostFrozen) {
+            const cx = Math.max(size / 2, Math.min(p.x, bounds.width - size / 2));
+            const cy = Math.max(size / 2, Math.min(p.y, bounds.height - size / 2));
+            const rect = { x: cx - size / 2, y: cy - size / 2, w: size, h: size };
+            obstacles.push({ shape: Shape.ghostTarget, rect });
+            target = { shape: Shape.ghostTarget, anchors: rectAnchors(rect) };
+
+            const box = document.createElementNS(ns, "rect");
+            box.setAttribute("x", `${rect.x}`);
+            box.setAttribute("y", `${rect.y}`);
+            box.setAttribute("width", `${rect.w}`);
+            box.setAttribute("height", `${rect.h}`);
+            box.setAttribute("rx", "8");
+            box.setAttribute("fill", "rgba(100, 149, 237, 0.12)");
+            box.setAttribute("stroke", accent);
+            box.setAttribute("stroke-width", "1.5");
+            box.setAttribute("stroke-dasharray", "5 4");
+            layer.appendChild(box);
+        } else {
+            target = { shape: Shape.ghostTarget, anchors: { n: p, e: p, s: p, w: p }, stub: 0 };
+            arrow = false;
+        }
+
+        let points: Array<{ x: number; y: number }>;
+        const overSource =
+            !Shape.hover &&
+            !Shape.ghostFrozen &&
+            p.x > source.posX && p.x < source.posX + source.width &&
+            p.y > source.posY && p.y < source.posY + source.height;
+
+        if (overSource) {
+            const out = { n: [0, -1], e: [1, 0], s: [0, 1], w: [-1, 0] }[pending.direction];
+            points = [start, { x: start.x + out[0] * 24, y: start.y + out[1] * 24 }];
+        } else {
+            points = Shape.router.route(
+                { shape: source, side: pending.direction, point: start },
+                target,
+                obstacles,
+                bounds,
+                false
+            ).points;
+        }
+
+        const path = document.createElementNS(ns, "path");
+        path.setAttribute("d", roundedPath(points));
+        path.setAttribute("class", "ghost-path");
+        path.setAttribute("fill", "none");
+        path.setAttribute("stroke", accent);
+        path.setAttribute("stroke-width", "2");
+        path.setAttribute("stroke-dasharray", "6 5");
+        path.setAttribute("stroke-linejoin", "round");
+        if (arrow && !overSource) {
+            path.setAttribute("marker-end", "url(#ghost-arrow-head)");
+        }
+        layer.appendChild(path);
+
+        if (!arrow) {
+            const end = points[points.length - 1];
+            const dot = document.createElementNS(ns, "circle");
+            dot.setAttribute("cx", `${end.x}`);
+            dot.setAttribute("cy", `${end.y}`);
+            dot.setAttribute("r", "5");
+            dot.setAttribute("fill", "#fff");
+            dot.setAttribute("stroke", accent);
+            dot.setAttribute("stroke-width", "2");
+            layer.appendChild(dot);
+        }
     }
 
     protected static getOppositeDirection(direction: LinkDirection): LinkDirection {
@@ -210,80 +483,27 @@ export class Shape {
         return "w";
     }
 
+    protected getEdgePoint(direction: LinkDirection): { x: number; y: number } {
+        const centerX = this.posX + this.width / 2;
+        const centerY = this.posY + this.height / 2;
+
+        if (direction === "n") {
+            return { x: centerX, y: this.posY };
+        }
+        if (direction === "s") {
+            return { x: centerX, y: this.posY + this.height };
+        }
+        if (direction === "w") {
+            return { x: this.posX, y: centerY };
+        }
+        return { x: this.posX + this.width, y: centerY };
+    }
+
     protected static getLinkAnchor(shape: Shape, direction: LinkDirection): { x: number; y: number } {
-        const centerX = shape.posX + shape.width / 2;
-        const centerY = shape.posY + shape.height / 2;
-
-        if (direction === "n") {
-            return { x: centerX, y: shape.posY };
-        }
-        if (direction === "s") {
-            return { x: centerX, y: shape.posY + shape.height };
-        }
-        if (direction === "w") {
-            return { x: shape.posX, y: centerY };
-        }
-        return { x: shape.posX + shape.width, y: centerY };
+        return shape.getEdgePoint(direction);
     }
 
-    protected static getLinkEndpoint(shape: Shape, direction: LinkDirection): { x: number; y: number } {
-        const anchor = Shape.getLinkAnchor(shape, direction);
-        const offset = 8;
-
-        if (direction === "n") {
-            return { x: anchor.x, y: anchor.y - offset };
-        }
-        if (direction === "s") {
-            return { x: anchor.x, y: anchor.y + offset };
-        }
-        if (direction === "w") {
-            return { x: anchor.x - offset, y: anchor.y };
-        }
-        return { x: anchor.x + offset, y: anchor.y };
-    }
-
-    protected static buildConnectorPath(start: { x: number; y: number }, end: { x: number; y: number }): string {
-        const dx = end.x - start.x;
-        const dy = end.y - start.y;
-
-        if (Math.abs(dx) <= 1 && Math.abs(dy) <= 1) {
-            return `M ${start.x} ${start.y} L ${end.x} ${end.y}`;
-        }
-
-        const pad = 18;
-        const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
-
-        if (Math.abs(dx) >= Math.abs(dy)) {
-            const minY = Math.min(start.y, end.y) + pad;
-            const maxY = Math.max(start.y, end.y) - pad;
-            const turnY = maxY > minY ? clamp((start.y + end.y) / 2, minY, maxY) : start.y + (dy >= 0 ? pad : -pad);
-
-            return [
-                `M ${start.x} ${start.y}`,
-                `L ${start.x} ${turnY}`,
-                `L ${end.x} ${turnY}`,
-                `L ${end.x} ${end.y}`,
-            ].join(" ");
-        }
-
-        const minX = Math.min(start.x, end.x) + pad;
-        const maxX = Math.max(start.x, end.x) - pad;
-        const turnX = maxX > minX ? clamp((start.x + end.x) / 2, minX, maxX) : start.x + (dx >= 0 ? pad : -pad);
-
-        return [
-            `M ${start.x} ${start.y}`,
-            `L ${turnX} ${start.y}`,
-            `L ${turnX} ${end.y}`,
-            `L ${end.x} ${end.y}`,
-        ].join(" ");
-    }
-
-    protected static renderConnections() {
-        const chart = document.querySelector(".chart") as HTMLElement | null;
-        if (!chart) {
-            return;
-        }
-
+    protected static ensureLayers(chart: HTMLElement) {
         if (!Shape.linkLayer) {
             const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
             svg.setAttribute("class", "link-layer");
@@ -302,6 +522,46 @@ export class Shape {
             chart.appendChild(layer);
         }
 
+        if (!Shape.ghostLayer) {
+            const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+            svg.setAttribute("class", "ghost-layer");
+            svg.style.position = "absolute";
+            svg.style.inset = "0";
+            svg.style.pointerEvents = "none";
+            svg.style.overflow = "visible";
+            Shape.ghostLayer = svg;
+            chart.appendChild(svg);
+        }
+    }
+
+    protected static createArrowDefs(id = "link-arrow-head", color = "#475569"): SVGDefsElement {
+        const ns = "http://www.w3.org/2000/svg";
+        const defs = document.createElementNS(ns, "defs");
+        const marker = document.createElementNS(ns, "marker");
+        marker.setAttribute("id", id);
+        marker.setAttribute("viewBox", "0 0 10 10");
+        marker.setAttribute("refX", "10");
+        marker.setAttribute("refY", "5");
+        marker.setAttribute("markerWidth", "10");
+        marker.setAttribute("markerHeight", "10");
+        marker.setAttribute("markerUnits", "userSpaceOnUse");
+        marker.setAttribute("orient", "auto");
+        marker.style.overflow = "visible";
+        const arrow = document.createElementNS(ns, "path");
+        arrow.setAttribute("d", "M 0 0.5 L 10 5 L 0 9.5 L 2.5 5 z");
+        arrow.setAttribute("fill", color);
+        marker.appendChild(arrow);
+        defs.appendChild(marker);
+        return defs;
+    }
+
+    protected static renderConnections() {
+        const chart = document.querySelector(".chart") as HTMLElement | null;
+        if (!chart) {
+            return;
+        }
+
+        Shape.ensureLayers(chart);
         const svg = Shape.linkLayer;
         const labels = Shape.labelLayer;
         if (!svg || !labels) {
@@ -309,51 +569,55 @@ export class Shape {
         }
 
         svg.innerHTML = "";
-        const defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
-        const marker = document.createElementNS("http://www.w3.org/2000/svg", "marker");
-        marker.setAttribute("id", "link-arrow-head");
-        marker.setAttribute("markerWidth", "8");
-        marker.setAttribute("markerHeight", "8");
-        marker.setAttribute("refX", "6");
-        marker.setAttribute("refY", "3");
-        marker.setAttribute("orient", "auto");
-        marker.setAttribute("markerUnits", "strokeWidth");
-        const arrow = document.createElementNS("http://www.w3.org/2000/svg", "path");
-        arrow.setAttribute("d", "M 0 0 L 6 3 L 0 6 z");
-        arrow.setAttribute("fill", "#7a7a7a");
-        marker.appendChild(arrow);
-        defs.appendChild(marker);
-        svg.appendChild(defs);
-
+        svg.appendChild(Shape.createArrowDefs());
         labels.innerHTML = "";
 
+        const bounds = { width: chart.clientWidth, height: chart.clientHeight };
+        const obstacles = Shape.all.map((shape) => ({
+            shape,
+            rect: { x: shape.posX, y: shape.posY, w: shape.width, h: shape.height },
+        }));
+
+        Shape.router.reset();
+
+        Shape.all.forEach((shape) => shape.updateLinkHandles());
+
         Shape.connections.forEach((link) => {
-            const start = Shape.getLinkAnchor(link.from, link.direction);
-            const targetDirection = Shape.getOppositeDirection(link.direction);
-            const end = Shape.getLinkEndpoint(link.to, targetDirection);
-            const curve = Shape.buildConnectorPath(start, end);
+            const anchors = Shape.buildAnchorsAvoidingBlocked(link.to);
+
+            const route = Shape.router.route(
+                { shape: link.from, side: link.direction, point: Shape.getLinkAnchor(link.from, link.direction) },
+                { shape: link.to, anchors },
+                obstacles,
+                bounds
+            );
 
             const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-            path.setAttribute("d", curve);
+            path.setAttribute("d", roundedPath(route.points));
             path.setAttribute("fill", "none");
-            path.setAttribute("stroke", "#7a7a7a");
-            path.setAttribute("stroke-width", "2");
-            path.setAttribute("stroke-linecap", "round");
+            path.setAttribute("stroke", "#475569");
+            path.setAttribute("stroke-width", "1.75");
+            path.setAttribute("stroke-linecap", "butt");
+            path.setAttribute("stroke-linejoin", "round");
             path.setAttribute("marker-end", "url(#link-arrow-head)");
+            path.style.cursor = "pointer";
+            path.addEventListener("pointerdown", (event: PointerEvent) => {
+                event.preventDefault();
+                event.stopPropagation();
+                Shape.removeConnection(link);
+            });
             svg.appendChild(path);
 
-            const midpointX = (start.x + end.x) / 2;
-            const midpointY = (start.y + end.y) / 2 - 10;
+            const mid = labelPoint(route.points);
             const label = document.createElement("div");
             label.className = "link-label";
             label.setAttribute("contenteditable", "true");
             label.setAttribute("spellcheck", "false");
             label.textContent = link.label || "";
-            label.style.left = `${midpointX}px`;
-            label.style.top = `${midpointY}px`;
+            label.style.left = `${mid.x}px`;
+            label.style.top = `${mid.y}px`;
             label.addEventListener("input", () => {
                 link.label = label.textContent ?? "";
-                Shape.renderConnections();
             });
             label.addEventListener("keydown", (event) => {
                 if (event.key === "Enter") {
@@ -363,6 +627,10 @@ export class Shape {
             });
             labels.appendChild(label);
         });
+
+        if (Shape.pendingLink) {
+            Shape.renderGhost();
+        }
     }
 
     protected minWidthForHeight(height: number, start: number): number {
@@ -541,6 +809,7 @@ export class Shape {
     }
 
     constructor() {
+        Shape.all.push(this);
         this.element = document.createElement("div");
         this.element.classList.add("shape");
         this.content = document.createElement("div");
@@ -567,6 +836,7 @@ export class Shape {
             linkHandle.addEventListener("pointerdown", (event: PointerEvent) => {
                 event.preventDefault();
                 event.stopPropagation();
+                Shape.pointer = { x: event.clientX, y: event.clientY };
                 this.onLink(direction);
             });
             this.element.appendChild(linkHandle);
@@ -577,10 +847,8 @@ export class Shape {
 
         this.element.addEventListener("mousedown", (event: MouseEvent) => {
             if (Shape.pendingLink && Shape.pendingLink.source !== this) {
-                const pending = Shape.pendingLink;
-                Shape.pendingLink = null;
-                this.element.classList.remove("linking");
-                pending.source.connectTo(this, pending.direction, "");
+                event.preventDefault(); // don't drop a text caret into the target
+                Shape.completeLink(this);
                 return;
             }
             this.onMouseDown(event);
@@ -608,3 +876,5 @@ export class Shape {
         Shape.renderConnections();
     }
 }
+
+

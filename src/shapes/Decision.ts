@@ -31,6 +31,11 @@ export class Decision extends Shape {
     constructor() {
         super();
         this.content.classList.add("diamond");
+        this.width = 100;
+        this.height = 100;
+        this.minWidth = 100;
+        this.minHeight = 100;
+        this.apply();
         this.updateResizeHandles();
     }
 }
