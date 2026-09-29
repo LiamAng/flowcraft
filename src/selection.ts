@@ -1,15 +1,5 @@
 import { Shape } from "./shapes";
 
-
-
-
-
-
-
-
-
-
-const SELECT_MODE: "inside" | "touch" = "inside";
 const DRAG_THRESHOLD = 3;
 
 export function initSelection(chart: HTMLElement) {
@@ -17,7 +7,6 @@ export function initSelection(chart: HTMLElement) {
     box.className = "selection-box";
     document.body.appendChild(box);
 
-    
     const page = (event: PointerEvent) => ({ x: event.clientX + window.scrollX, y: event.clientY + window.scrollY });
 
     const inside = (shape: Shape, r: { x0: number; y0: number; x1: number; y1: number }) => {
@@ -26,14 +15,11 @@ export function initSelection(chart: HTMLElement) {
         const y0 = shape.posY;
         const x1 = x0 + size.x;
         const y1 = y0 + size.y;
-        if (SELECT_MODE === "touch") {
-            return x0 < r.x1 && x1 > r.x0 && y0 < r.y1 && y1 > r.y0;
-        }
         return x0 >= r.x0 && x1 <= r.x1 && y0 >= r.y0 && y1 <= r.y1;
     };
 
     chart.addEventListener("pointerdown", (event: PointerEvent) => {
-        
+
         if (event.button !== 0 || event.target !== chart || Shape.pendingLink) {
             return;
         }
@@ -87,6 +73,19 @@ export function initSelection(chart: HTMLElement) {
     document.addEventListener("keydown", (event: KeyboardEvent) => {
         if (event.key === "Escape" && !Shape.pendingLink) {
             Shape.clearSelection();
+            return;
         }
+
+        if ((event.key !== "Delete" && event.key !== "Backspace") || event.defaultPrevented || Shape.selection.size === 0) {
+            return;
+        }
+
+        const active = document.activeElement;
+        if (active instanceof HTMLElement && (active.isContentEditable || active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement || active instanceof HTMLSelectElement)) {
+            return;
+        }
+
+        event.preventDefault();
+        Shape.removeShapes(Shape.selection);
     });
 }

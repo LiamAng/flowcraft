@@ -6,7 +6,7 @@ const OPTIONS: Option[] = [
     { label: "Process", icon: "process", create: () => new Process() },
     { label: "Decision", icon: "decision", create: () => new Decision() },
     { label: "Input / Output", icon: "io", create: () => new InputOutput() },
-    
+
     { label: "Terminator (End)", icon: "terminator", create: () => new Terminator("end") },
 ];
 

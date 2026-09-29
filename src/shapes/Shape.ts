@@ -3,12 +3,7 @@ import { Router, roundedPath, labelPoint, findCrossingJumps, type Side, type Poi
 export type ResizeDirection = "n" | "s" | "e" | "w" | "ne" | "nw" | "se" | "sw";
 export type LinkDirection = "n" | "s" | "e" | "w";
 
-
 export type LinkRole = "next" | "altNext";
-
-
-
-
 
 export type Waypoint = { ox: number; oy: number; dir: LinkDirection };
 
@@ -18,9 +13,9 @@ export type LinkRecord = {
     direction: LinkDirection;
     role: LinkRole;
     label: string;
-    
+
     waypoints?: Waypoint[];
-    
+
     entrySide?: LinkDirection;
 };
 
@@ -48,7 +43,6 @@ export class Shape {
     protected static lastLineClick: { link: LinkRecord; time: number } | null = null;
     protected static groupDrag: { leader: Shape; startX: number; startY: number; origins: Map<Shape, { x: number; y: number }> } | null = null;
 
-    
     public static selection = new Set<Shape>();
 
     public readonly id = `shape-${++Shape.nextId}`;
@@ -58,7 +52,6 @@ export class Shape {
     public posY = 0;
     public outgoingLinks: Array<{ direction: LinkDirection; role: LinkRole; label: string; to: Shape }> = [];
 
-    
     get next(): Shape | null {
         return this.outgoingLinks.find((link) => link.role === "next")?.to ?? null;
     }
@@ -117,7 +110,6 @@ export class Shape {
         return { x: this.posX + this.width / 2, y: this.posY + this.height / 2 };
     }
 
-    
     protected syncLinkData() {
         const write = (key: string, target: Shape | null) => {
             if (target) {
@@ -128,8 +120,6 @@ export class Shape {
         };
         write("next", this.next);
     }
-
-    
 
     public static setSelection(shapes: Iterable<Shape>) {
         Shape.selection = new Set(shapes);
@@ -142,14 +132,55 @@ export class Shape {
         }
     }
 
+    public static removeShapes(shapes: Iterable<Shape>) {
+        const removed = new Set(shapes);
+        if (removed.size === 0) {
+            return;
+        }
+
+        if (Shape.groupDrag && [...Shape.groupDrag.origins.keys()].some((shape) => removed.has(shape))) {
+            Shape.groupDrag = null;
+        }
+        removed.forEach((shape) => shape.onMouseUp());
+
+        const removedConnections = Shape.connections.filter((link) => removed.has(link.from) || removed.has(link.to));
+        Shape.connections = Shape.connections.filter((link) => !removed.has(link.from) && !removed.has(link.to));
+        Shape.all = Shape.all.filter((shape) => !removed.has(shape));
+        removed.forEach((shape) => shape.element.remove());
+
+        Shape.selection = new Set([...Shape.selection].filter((shape) => !removed.has(shape)));
+        Shape.all.forEach((shape) => {
+            shape.element.classList.toggle("selected", Shape.selection.has(shape));
+            shape.outgoingLinks = shape.outgoingLinks.filter((outgoing) =>
+                !removedConnections.some((link) =>
+                    link.from === shape && link.to === outgoing.to && link.direction === outgoing.direction && link.role === outgoing.role
+                )
+            );
+            if (removedConnections.some((link) => link.from === shape)) {
+                shape.syncLinkData();
+            }
+        });
+
+        if (Shape.selectedLink && removedConnections.includes(Shape.selectedLink)) {
+            Shape.selectedLink = null;
+        }
+        if (Shape.draggingLink && removedConnections.includes(Shape.draggingLink)) {
+            Shape.draggingLink = null;
+        }
+        if (Shape.hover && removed.has(Shape.hover)) {
+            Shape.hover = null;
+        }
+        if (Shape.pendingLink && removed.has(Shape.pendingLink.source)) {
+            Shape.endLink();
+        } else {
+            Shape.renderConnections();
+        }
+    }
+
     setCenter(x: number, y: number) {
         this.posX = x - this.width / 2;
         this.posY = y - this.height / 2;
         this.apply();
-    }
-
-    setDraggable(draggable: boolean) {
-        this.draggable = draggable;
     }
 
     protected apply() {
@@ -235,14 +266,6 @@ export class Shape {
         return this.outgoingLinks.length;
     }
 
-    
-
-
-
-
-
-
-
     protected static reservedSidesFor(shape: Shape, exclude?: LinkRecord): Set<LinkDirection> {
         const reserved = new Set<LinkDirection>(shape.outgoingLinks.map((link) => link.direction));
 
@@ -278,8 +301,6 @@ export class Shape {
             return;
         }
 
-        
-        
         const role: LinkRole = this.outgoingLinks.some((link) => link.role === "next") ? "altNext" : "next";
         const record: LinkRecord = { from: this, to: target, direction, role, label };
         Shape.connections.push(record);
@@ -325,10 +346,6 @@ export class Shape {
         }
 
         Shape.startLink(this, direction);
-    }
-
-    public static isLinking(): boolean {
-        return Shape.pendingLink !== null;
     }
 
     public static startLink(source: Shape, direction: LinkDirection) {
@@ -668,8 +685,6 @@ export class Shape {
 
         Shape.router.reset();
 
-        
-        
         const routed = Shape.connections.map((link) => {
             const anchors = Shape.buildTargetAnchors(link.to);
             const avoid = Shape.reservedSidesFor(link.to, link);
@@ -709,8 +724,6 @@ export class Shape {
             }
             svg.appendChild(path);
 
-            
-            
             for (let seg = 0; seg < points.length - 1; seg++) {
                 const a = points[seg];
                 const b = points[seg + 1];
@@ -800,11 +813,6 @@ export class Shape {
         }
     }
 
-    
-
-
-
-
     protected static beginLineDrag(link: LinkRecord, points: Point[], seg: number, event: PointerEvent) {
         if (event.button !== 0 || Shape.pendingLink) {
             return;
@@ -820,7 +828,6 @@ export class Shape {
         const waypoints = [...(link.waypoints ?? [])];
         const absolute = (w: Waypoint): Point => ({ x: centre.x + w.ox, y: centre.y + w.oy });
 
-        
         const segmentOf = (w: Waypoint): number => {
             const at = absolute(w);
             for (let i = 0; i < points.length - 1; i++) {
@@ -835,8 +842,6 @@ export class Shape {
             return -1;
         };
 
-        
-        
         let index = waypoints.findIndex((w) => segmentOf(w) === seg);
         const isNew = index < 0;
         const base: Point = isNew ? { x: (p0.x + p1.x) / 2, y: (p0.y + p1.y) / 2 } : absolute(waypoints[index]);
@@ -1062,9 +1067,9 @@ export class Shape {
             return;
         }
 
-        
         if (event.shiftKey) {
             event.preventDefault();
+            (document.activeElement as HTMLElement | null)?.blur();
             const next = new Set(Shape.selection);
             if (!next.delete(this)) {
                 next.add(this);
@@ -1082,8 +1087,8 @@ export class Shape {
         this.dragOffsetY = event.clientY - this.posY;
 
         if (Shape.selection.size > 1) {
-            
-            event.preventDefault(); 
+
+            event.preventDefault();
             Shape.groupDrag = {
                 leader: this,
                 startX: event.clientX,
@@ -1104,7 +1109,7 @@ export class Shape {
             const bounds = chart ?? document.body;
             let dx = event.clientX - group.startX;
             let dy = event.clientY - group.startY;
-            
+
             group.origins.forEach((origin, shape) => {
                 dx = Math.max(-origin.x, Math.min(dx, bounds.clientWidth - shape.width - origin.x));
                 dy = Math.max(-origin.y, Math.min(dy, bounds.clientHeight - shape.height - origin.y));
@@ -1179,7 +1184,7 @@ export class Shape {
 
         this.element.addEventListener("mousedown", (event: MouseEvent) => {
             if (Shape.pendingLink && Shape.pendingLink.source !== this) {
-                event.preventDefault(); 
+                event.preventDefault();
                 Shape.completeLink(this);
                 return;
             }

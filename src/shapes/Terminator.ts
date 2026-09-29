@@ -17,11 +17,10 @@ export class Terminator extends Shape {
         this.apply();
     }
 
-    
     setTerminatorType(type: TerminatorType) {
         this.terminatorType = type;
         const display = type === "start" ? "Start" : "End";
-        
+
         this.element.dataset.tooltip = display;
         this.content.textContent = display;
     }

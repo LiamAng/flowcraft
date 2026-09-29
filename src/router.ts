@@ -91,13 +91,6 @@ export class Router {
         this.used = [];
     }
 
-    
-
-
-
-
-
-
     route(
         src: RouteSource,
         dst: RouteTarget,
@@ -127,11 +120,6 @@ export class Router {
         if (remember) this.remember(result.points);
         return { points: result.points, entry: result.entry };
     }
-
-    
-
-
-
 
     routeVia(
         src: RouteSource,
@@ -424,18 +412,16 @@ export function simplify(points: Point[]): Point[] {
     return result;
 }
 
-
 export type SegmentJumps = Map<number, number[]>;
 
-const JUMP_RADIUS = 6; 
-const JUMP_MIN_RADIUS = 2.5; 
-const JUMP_GAP = 1; 
-const ARROW_LENGTH = 10; 
+const JUMP_RADIUS = 6;
+const JUMP_MIN_RADIUS = 2.5;
+const JUMP_GAP = 1;
+const ARROW_LENGTH = 10;
 
 function segLength(a: Point, b: Point): number {
     return Math.hypot(b.x - a.x, b.y - a.y);
 }
-
 
 function cornerTrim(points: Point[], seg: number, radius: number): { start: number; end: number } {
     const len = segLength(points[seg], points[seg + 1]);
@@ -444,22 +430,16 @@ function cornerTrim(points: Point[], seg: number, radius: number): { start: numb
     const r = (other: number | null) => {
         if (other === null) return null;
         const v = Math.min(radius, other / 2, len / 2);
-        return v < 0.5 ? 0 : v; 
+        return v < 0.5 ? 0 : v;
     };
     return { start: r(prev) ?? 0, end: r(next) ?? ARROW_LENGTH };
 }
-
 
 function jumpRoom(points: Point[], seg: number, offset: number, radius: number): number {
     const len = segLength(points[seg], points[seg + 1]);
     const trim = cornerTrim(points, seg, radius);
     return Math.min(offset - trim.start, len - offset - trim.end) - JUMP_GAP;
 }
-
-
-
-
-
 
 function curveShift(points: Point[], seg: number, cx: number, cy: number, radius: number): Point {
     const p0 = points[seg];
@@ -472,7 +452,7 @@ function curveShift(points: Point[], seg: number, cx: number, cy: number, radius
         const p2 = points[seg + 2];
         const len2 = segLength(p1, p2);
         const r = Math.min(radius, len / 2, len2 / 2);
-        const d = (p1.x - cx) * ux + (p1.y - cy) * uy; 
+        const d = (p1.x - cx) * ux + (p1.y - cy) * uy;
         if (r >= 0.5 && d < r) {
             const t = 1 - Math.sqrt(Math.max(d, 0) / r);
             const k = r * t * t;
@@ -484,7 +464,7 @@ function curveShift(points: Point[], seg: number, cx: number, cy: number, radius
         const pp = points[seg - 1];
         const lenP = segLength(pp, p0);
         const r = Math.min(radius, lenP / 2, len / 2);
-        const d = (cx - p0.x) * ux + (cy - p0.y) * uy; 
+        const d = (cx - p0.x) * ux + (cy - p0.y) * uy;
         if (r >= 0.5 && d < r) {
             const t = Math.sqrt(Math.max(d, 0) / r);
             const k = r * (1 - t) * (1 - t);
@@ -495,12 +475,6 @@ function curveShift(points: Point[], seg: number, cx: number, cy: number, radius
     return { x: 0, y: 0 };
 }
 
-
-
-
-
-
-
 function emitRun(rawStart: Point, from: Point, to: Point, offsets: number[], endPad: number): string {
     const length = Math.hypot(to.x - from.x, to.y - from.y);
     if (offsets.length === 0 || length < 2 * JUMP_MIN_RADIUS) {
@@ -510,10 +484,9 @@ function emitRun(rawStart: Point, from: Point, to: Point, offsets: number[], end
     const ux = (to.x - from.x) / length;
     const uy = (to.y - from.y) / length;
     const sweep = ux > 0 || uy > 0 ? 1 : 0;
-    
-    
+
     const drawnStart = ux * (from.x - rawStart.x) + uy * (from.y - rawStart.y);
-    const locals = offsets.map((offset) => offset - drawnStart); 
+    const locals = offsets.map((offset) => offset - drawnStart);
 
     let d = "";
     locals.forEach((local, i) => {
@@ -535,12 +508,6 @@ function emitRun(rawStart: Point, from: Point, to: Point, offsets: number[], end
 
     return `${d} L ${to.x} ${to.y}`;
 }
-
-
-
-
-
-
 
 export function roundedPath(points: Point[], radius = ROUTE_STYLE.radius, jumps?: SegmentJumps): string {
     if (points.length === 0) return "";
@@ -576,18 +543,10 @@ export function roundedPath(points: Point[], radius = ROUTE_STYLE.radius, jumps?
     return d;
 }
 
-
-
-
-
-
-
-
-
 export function findCrossingJumps(lines: Point[][]): SegmentJumps[] {
     const result: SegmentJumps[] = lines.map(() => new Map());
     const radius = ROUTE_STYLE.radius;
-    const EDGE = 0.5; 
+    const EDGE = 0.5;
 
     const add = (line: number, seg: number, offset: number) => {
         const list = result[line].get(seg) ?? [];
@@ -612,7 +571,7 @@ export function findCrossingJumps(lines: Point[][]): SegmentJumps[] {
                     const b1 = b[sj + 1];
                     const bHorizontal = Math.abs(b0.y - b1.y) < 0.01;
                     const bVertical = Math.abs(b0.x - b1.x) < 0.01;
-                    if (aHorizontal === bHorizontal) continue; 
+                    if (aHorizontal === bHorizontal) continue;
                     if (!bHorizontal && !bVertical) continue;
 
                     const h = aHorizontal ? { seg: a0.y, lo: Math.min(a0.x, a1.x), hi: Math.max(a0.x, a1.x) } : { seg: b0.y, lo: Math.min(b0.x, b1.x), hi: Math.max(b0.x, b1.x) };
@@ -624,8 +583,6 @@ export function findCrossingJumps(lines: Point[][]): SegmentJumps[] {
                     const jx = v.seg;
                     const jy = h.seg;
 
-                    
-                    
                     const place = (line: Point[], seg: number, over: Point[], overSeg: number) => {
                         const shift = curveShift(over, overSeg, jx, jy, radius);
                         const cx = jx + shift.x;
@@ -637,7 +594,7 @@ export function findCrossingJumps(lines: Point[][]): SegmentJumps[] {
                         return { offset, room: jumpRoom(line, seg, offset, radius) };
                     };
 
-                    const onB = place(b, sj, a, si); 
+                    const onB = place(b, sj, a, si);
                     const onA = place(a, si, b, sj);
 
                     let useB: boolean;
@@ -646,7 +603,7 @@ export function findCrossingJumps(lines: Point[][]): SegmentJumps[] {
                     else useB = onB.room >= onA.room;
 
                     const pick = useB ? onB : onA;
-                    if (pick.room < JUMP_MIN_RADIUS) continue; 
+                    if (pick.room < JUMP_MIN_RADIUS) continue;
 
                     if (useB) add(lj, sj, pick.offset);
                     else add(li, si, pick.offset);

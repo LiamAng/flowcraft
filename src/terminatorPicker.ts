@@ -1,11 +1,5 @@
 import type { TerminatorType } from "./shapes";
 
-
-
-
-
-
-
 let menu: HTMLDivElement | null = null;
 let resolver: ((type: TerminatorType | null) => void) | null = null;
 
@@ -69,11 +63,9 @@ function ensureMenu(): HTMLDivElement {
     return el;
 }
 
-
 export function pickTerminatorType(clientX: number, clientY: number): Promise<TerminatorType | null> {
     const el = ensureMenu();
 
-    
     finish(null);
 
     return new Promise((resolve) => {

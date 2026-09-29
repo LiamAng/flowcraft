@@ -17,7 +17,6 @@ export class Decision extends Shape {
         return 2;
     }
 
-    
     get altNext(): Shape | null {
         return this.outgoingLinks.find((link) => link.role === "altNext")?.to ?? null;
     }

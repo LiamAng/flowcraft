@@ -1,7 +1,4 @@
 
-
-
-
 export function initTooltip() {
     const tip = document.createElement("div");
     tip.className = "cursor-tooltip";

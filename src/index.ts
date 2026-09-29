@@ -8,7 +8,6 @@ import { initTooltip } from "./tooltip";
 export const chart: HTMLElement = document.querySelector('.chart') as HTMLElement;
 const palette = document.getElementById('shape-palette') as HTMLDivElement;
 
-const shapes: Shape[] = [];
 const factoryMap = {
     process: () => new Process(),
     decision: () => new Decision(),
@@ -20,15 +19,12 @@ let selectedTool: keyof typeof factoryMap = 'process';
 
 function addShape<T extends Shape>(shape: T): T {
     chart.appendChild(shape.element);
-    shapes.push(shape);
     return shape;
 }
 
-function createShape(kind: keyof typeof factoryMap, x?: number, y?: number): Shape {
+function createShape(kind: keyof typeof factoryMap, x: number, y: number): Shape {
     const shape = factoryMap[kind]();
-    if (typeof x === 'number' && typeof y === 'number') {
-        shape.setCenter(x, y);
-    }
+    shape.setCenter(x, y);
     return addShape(shape);
 }
 
