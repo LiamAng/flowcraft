@@ -283,6 +283,30 @@
         .pick-icon.io { clip-path: polygon(20% 0%, 100% 0%, 80% 100%, 0% 100%); }
         .pick-icon.terminator { border-radius: 999px; }
 
+        .shape[data-terminator-type]::after {
+            content: attr(data-terminator-type);
+            position: absolute;
+            left: 50%;
+            bottom: calc(100% + 8px);
+            transform: translateX(-50%) translateY(4px);
+            padding: 3px 8px;
+            border-radius: 6px;
+            background: rgba(15, 23, 42, 0.92);
+            color: #fff;
+            font: 600 11px system-ui, sans-serif;
+            white-space: nowrap;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.12s ease, transform 0.12s ease;
+            z-index: 50;
+        }
+
+        .shape[data-terminator-type]:hover::after,
+        .shape[data-terminator-type]:focus-within::after {
+            opacity: 1;
+            transform: translateX(-50%) translateY(0);
+        }
+
         .controls {
             position: fixed;
             top: 12px;

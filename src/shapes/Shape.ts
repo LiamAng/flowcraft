@@ -1,4 +1,4 @@
-import { Router, roundedPath, labelPoint, type Side, type RouteTarget, type RouteObstacle } from "../router";
+import { Router, roundedPath, labelPoint, findCrossingJumps, type Side, type RouteTarget, type RouteObstacle } from "../router";
 
 export type ResizeDirection = "n" | "s" | "e" | "w" | "ne" | "nw" | "se" | "sw";
 export type LinkDirection = "n" | "s" | "e" | "w";
@@ -8,6 +8,8 @@ export type LinkRecord = {
     to: Shape;
     direction: LinkDirection;
     label: string;
+    /** Which side of `to` the router last entered from. Set by renderConnections(); used to keep incoming lines off sides that are already in use. */
+    entrySide?: LinkDirection;
 };
 
 export class Shape {
@@ -149,14 +151,17 @@ export class Shape {
     }
 
     protected updateLinkHandles() {
+        const supported = this.getLinkDirections();
+        const used = Shape.reservedSidesFor(this);
+
         this.element.querySelectorAll<HTMLButtonElement>(".link-handle").forEach((handle) => {
             const dir = handle.dataset.linkDir as LinkDirection | undefined;
-            if (!dir) {
+            if (!dir || !supported.includes(dir)) {
                 handle.style.display = "none";
                 return;
             }
 
-            handle.style.display = "";
+            handle.style.display = used.has(dir) ? "none" : "";
         });
     }
 
@@ -172,45 +177,33 @@ export class Shape {
         return this.outgoingLinks.length;
     }
 
-    protected static getOccupiedLinkSidesFor(shape: Shape): Set<LinkDirection> {
-        const occupied = new Set<LinkDirection>();
-
-        shape.outgoingLinks.forEach((link) => {
-            occupied.add(link.direction);
-        });
+    /**
+     * Sides of `shape` that already have a line touching them — either an
+     * outgoing link leaving from that side, or an incoming link's last-known
+     * entry side. Used both to hide a shape's link handles on occupied sides
+     * and to steer new/rerouted lines toward the sides that are still free.
+     * `exclude` leaves out one link's own entry (so re-routing that link
+     * doesn't count its previous position against itself).
+     */
+    protected static reservedSidesFor(shape: Shape, exclude?: LinkRecord): Set<LinkDirection> {
+        const reserved = new Set<LinkDirection>(shape.outgoingLinks.map((link) => link.direction));
 
         Shape.connections.forEach((link) => {
-            if (link.from === shape) {
-                occupied.add(link.direction);
+            if (link.to === shape && link !== exclude && link.entrySide) {
+                reserved.add(link.entrySide);
             }
         });
 
-        return occupied;
+        return reserved;
     }
 
-    protected static buildAnchorsAvoidingBlocked(shape: Shape): Record<Side, { x: number; y: number }> {
-        const blocked = Shape.getOccupiedLinkSidesFor(shape);
-        const anchors = {
+    protected static buildTargetAnchors(shape: Shape): Record<Side, { x: number; y: number }> {
+        return {
             n: Shape.getLinkAnchor(shape, "n"),
             e: Shape.getLinkAnchor(shape, "e"),
             s: Shape.getLinkAnchor(shape, "s"),
             w: Shape.getLinkAnchor(shape, "w"),
         } as Record<Side, { x: number; y: number }>;
-
-        (Object.keys(anchors) as Side[]).forEach((side) => {
-            if (!blocked.has(side)) {
-                return;
-            }
-
-            const point = anchors[side];
-            const offset = side === "n" ? { x: 0, y: -9999 }
-                : side === "e" ? { x: 9999, y: 0 }
-                : side === "s" ? { x: 0, y: 9999 }
-                : { x: -9999, y: 0 };
-            anchors[side] = { x: point.x + offset.x, y: point.y + offset.y };
-        });
-
-        return anchors;
     }
 
     protected canAcceptLink(): boolean {
@@ -230,14 +223,12 @@ export class Shape {
         const record: LinkRecord = { from: this, to: target, direction, label };
         Shape.connections.push(record);
         this.outgoingLinks.push({ direction, label, to: target });
-        Shape.all.forEach((shape) => shape.updateLinkHandles());
         Shape.renderConnections();
     }
 
     public static removeConnection(connection: LinkRecord) {
         Shape.connections = Shape.connections.filter((link) => link !== connection);
         connection.from.outgoingLinks = connection.from.outgoingLinks.filter((link) => link.to !== connection.to || link.direction !== connection.direction);
-        Shape.all.forEach((shape) => shape.updateLinkHandles());
         Shape.renderConnections();
     }
 
@@ -390,17 +381,12 @@ export class Shape {
         let target: RouteTarget;
         let arrow = true;
 
+        let avoid: Set<LinkDirection> | undefined;
+
         if (Shape.hover) {
             const h = Shape.hover;
-            target = {
-                shape: h,
-                anchors: {
-                    n: Shape.getLinkAnchor(h, "n"),
-                    e: Shape.getLinkAnchor(h, "e"),
-                    s: Shape.getLinkAnchor(h, "s"),
-                    w: Shape.getLinkAnchor(h, "w"),
-                },
-            };
+            target = { shape: h, anchors: Shape.buildTargetAnchors(h) };
+            avoid = Shape.reservedSidesFor(h);
         } else if (Shape.ghostFrozen) {
             const cx = Math.max(size / 2, Math.min(p.x, bounds.width - size / 2));
             const cy = Math.max(size / 2, Math.min(p.y, bounds.height - size / 2));
@@ -440,7 +426,8 @@ export class Shape {
                 target,
                 obstacles,
                 bounds,
-                false
+                false,
+                avoid
             ).points;
         }
 
@@ -580,20 +567,29 @@ export class Shape {
 
         Shape.router.reset();
 
-        Shape.all.forEach((shape) => shape.updateLinkHandles());
-
-        Shape.connections.forEach((link) => {
-            const anchors = Shape.buildAnchorsAvoidingBlocked(link.to);
+        // Routing is stateful (each route avoids sides/paths already claimed), so it has to run
+        // for every link before line-crossing jumps can be worked out across all of them.
+        const routed = Shape.connections.map((link) => {
+            const anchors = Shape.buildTargetAnchors(link.to);
+            const avoid = Shape.reservedSidesFor(link.to, link);
 
             const route = Shape.router.route(
                 { shape: link.from, side: link.direction, point: Shape.getLinkAnchor(link.from, link.direction) },
                 { shape: link.to, anchors },
                 obstacles,
-                bounds
+                bounds,
+                true,
+                avoid
             );
+            link.entrySide = route.entry;
+            return { link, points: route.points };
+        });
 
+        const jumps = findCrossingJumps(routed.map((r) => r.points));
+
+        routed.forEach(({ link, points }, index) => {
             const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-            path.setAttribute("d", roundedPath(route.points));
+            path.setAttribute("d", roundedPath(points, undefined, jumps[index]));
             path.setAttribute("fill", "none");
             path.setAttribute("stroke", "#475569");
             path.setAttribute("stroke-width", "1.75");
@@ -608,7 +604,7 @@ export class Shape {
             });
             svg.appendChild(path);
 
-            const mid = labelPoint(route.points);
+            const mid = labelPoint(points);
             const label = document.createElement("div");
             label.className = "link-label";
             label.setAttribute("contenteditable", "true");
@@ -627,6 +623,8 @@ export class Shape {
             });
             labels.appendChild(label);
         });
+
+        Shape.all.forEach((shape) => shape.updateLinkHandles());
 
         if (Shape.pendingLink) {
             Shape.renderGhost();

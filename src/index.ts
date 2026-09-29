@@ -1,4 +1,5 @@
 import { Shape, Process, Decision, InputOutput, Terminator } from "./shapes";
+import { pickTerminatorType } from "./terminatorPicker";
 import { Simulator } from "./simulator";
 import { initLinkPicker } from "./linkPicker";
 
@@ -79,7 +80,17 @@ function renderPalette() {
                 const dropY = upEvent.clientY - rect.top;
 
                 if (chartTarget === chart) {
-                    createShape(tool.key, dropX, dropY);
+                    if (tool.key === 'terminator') {
+                        pickTerminatorType(upEvent.clientX, upEvent.clientY).then((type) => {
+                            if (type) {
+                                const shape = new Terminator(type);
+                                shape.setCenter(dropX, dropY);
+                                addShape(shape);
+                            }
+                        });
+                    } else {
+                        createShape(tool.key, dropX, dropY);
+                    }
                 }
 
                 preview.remove();

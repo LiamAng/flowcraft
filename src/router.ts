@@ -91,13 +91,36 @@ export class Router {
         this.used = [];
     }
 
-    route(src: RouteSource, dst: RouteTarget, obstacles: RouteObstacle[], bounds: RouteBounds, remember = true): RouteResult {
-        let best: Found | null = null;
-        for (const side of SIDES) {
-            const candidate = this.search(src, dst, side, obstacles, bounds);
-            if (candidate && (!best || candidate.cost < best.cost)) {
-                best = candidate;
+    /**
+     * `avoid` is a set of target sides to try to skip — used to keep a shape's
+     * incoming/outgoing lines spread across different sides instead of stacking
+     * on one. It is a soft preference: if every non-avoided side fails to find a
+     * route, the avoided sides are tried too, so a link is never dropped just to
+     * keep a side clear.
+     */
+    route(
+        src: RouteSource,
+        dst: RouteTarget,
+        obstacles: RouteObstacle[],
+        bounds: RouteBounds,
+        remember = true,
+        avoid?: ReadonlySet<Side>
+    ): RouteResult {
+        const attempt = (sides: readonly Side[]): Found | null => {
+            let best: Found | null = null;
+            for (const side of sides) {
+                const candidate = this.search(src, dst, side, obstacles, bounds);
+                if (candidate && (!best || candidate.cost < best.cost)) {
+                    best = candidate;
+                }
             }
+            return best;
+        };
+
+        const preferred = avoid && avoid.size > 0 ? SIDES.filter((side) => !avoid.has(side)) : SIDES;
+        let best = preferred.length > 0 ? attempt(preferred) : null;
+        if (!best && preferred.length < SIDES.length) {
+            best = attempt(SIDES);
         }
 
         const result: RouteResult = best ?? this.fallback(src, dst);
@@ -369,9 +392,62 @@ export function simplify(points: Point[]): Point[] {
     return result;
 }
 
-export function roundedPath(points: Point[], radius = ROUTE_STYLE.radius): string {
+/** Offsets (distance from the segment's start point) at which a line should hop over another. */
+export type SegmentJumps = Map<number, number[]>;
+
+const JUMP_RADIUS = 6;
+const JUMP_END_CLEARANCE = JUMP_RADIUS + 6; // keep bumps clear of corners and other bumps
+
+/**
+ * Appends a straight run from `from` to `to`, hopping over `offsets` along the way. Offsets are
+ * distances from `rawStart` (the un-rounded segment start), which may sit a few px before `from`
+ * once corner rounding has trimmed the run — bumps that fall outside the drawn [from, to] range
+ * (i.e. in the rounded-corner region) are skipped rather than drawn in the wrong place.
+ */
+function emitRun(rawStart: Point, from: Point, to: Point, offsets: number[]): string {
+    const length = Math.hypot(to.x - from.x, to.y - from.y);
+    if (offsets.length === 0 || length < 2 * JUMP_END_CLEARANCE) {
+        return ` L ${to.x} ${to.y}`;
+    }
+
+    const ux = (to.x - from.x) / length;
+    const uy = (to.y - from.y) / length;
+    const sweep = ux > 0 || uy > 0 ? 1 : 0;
+    // Signed distance from rawStart to `from` along the line's direction (rawStart and `from`
+    // are colinear — `from` is rawStart itself, or shifted forward a bit by corner rounding).
+    const drawnStart = ux * (from.x - rawStart.x) + uy * (from.y - rawStart.y);
+
+    let d = "";
+    let last = -Infinity;
+    for (const offset of offsets) {
+        const local = offset - drawnStart; // position along the drawn [from, to] run
+        if (local < JUMP_END_CLEARANCE || local > length - JUMP_END_CLEARANCE || local - last < 2 * JUMP_END_CLEARANCE) {
+            continue;
+        }
+        last = local;
+
+        const cx = from.x + ux * local;
+        const cy = from.y + uy * local;
+        const sx = cx - ux * JUMP_RADIUS;
+        const sy = cy - uy * JUMP_RADIUS;
+        const ex = cx + ux * JUMP_RADIUS;
+        const ey = cy + uy * JUMP_RADIUS;
+        d += ` L ${sx} ${sy} A ${JUMP_RADIUS} ${JUMP_RADIUS} 0 0 ${sweep} ${ex} ${ey}`;
+    }
+
+    return `${d} L ${to.x} ${to.y}`;
+}
+
+/**
+ * Same as `roundedPath`, but hops in a small arc over any point in `jumps` that falls on a
+ * straight run of the line — so two connectors that merely cross read as unconnected instead
+ * of looking like a junction. `jumps` maps a segment index (points[i] -> points[i+1]) to the
+ * distances along that segment where another line passes underneath.
+ */
+export function roundedPath(points: Point[], radius = ROUTE_STYLE.radius, jumps?: SegmentJumps): string {
     if (points.length === 0) return "";
     let d = `M ${points[0].x} ${points[0].y}`;
+    let cursor = points[0];
 
     for (let i = 1; i < points.length - 1; i++) {
         const p0 = points[i - 1];
@@ -382,7 +458,8 @@ export function roundedPath(points: Point[], radius = ROUTE_STYLE.radius): strin
         const r = Math.min(radius, len1 / 2, len2 / 2);
 
         if (r < 0.5) {
-            d += ` L ${p1.x} ${p1.y}`;
+            d += emitRun(p0, cursor, p1, jumps?.get(i - 1) ?? []);
+            cursor = p1;
             continue;
         }
 
@@ -390,11 +467,67 @@ export function roundedPath(points: Point[], radius = ROUTE_STYLE.radius): strin
         const ay = p1.y + ((p0.y - p1.y) / len1) * r;
         const bx = p1.x + ((p2.x - p1.x) / len2) * r;
         const by = p1.y + ((p2.y - p1.y) / len2) * r;
-        d += ` L ${ax} ${ay} Q ${p1.x} ${p1.y} ${bx} ${by}`;
+        d += emitRun(p0, cursor, { x: ax, y: ay }, jumps?.get(i - 1) ?? []);
+        d += ` Q ${p1.x} ${p1.y} ${bx} ${by}`;
+        cursor = { x: bx, y: by };
     }
 
     const last = points[points.length - 1];
-    return `${d} L ${last.x} ${last.y}`;
+    const lastSegStart = points[points.length - 2] ?? cursor;
+    d += emitRun(lastSegStart, cursor, last, jumps?.get(points.length - 2) ?? []);
+    return d;
+}
+
+/**
+ * Finds where the given polylines cross (one horizontal segment meeting one vertical segment
+ * at a point interior to both). `lines` should be in draw order: when two different lines
+ * cross, the jump is assigned to the later one, so it visually hops over the earlier one.
+ * Crossings within the same line (index i === j) are ignored.
+ */
+export function findCrossingJumps(lines: Point[][]): SegmentJumps[] {
+    const result: SegmentJumps[] = lines.map(() => new Map());
+    const margin = JUMP_END_CLEARANCE;
+
+    for (let li = 0; li < lines.length; li++) {
+        for (let lj = li + 1; lj < lines.length; lj++) {
+            const a = lines[li];
+            const b = lines[lj];
+
+            for (let si = 0; si < a.length - 1; si++) {
+                const a0 = a[si];
+                const a1 = a[si + 1];
+                const aHorizontal = Math.abs(a0.y - a1.y) < 0.01;
+                const aVertical = Math.abs(a0.x - a1.x) < 0.01;
+                if (!aHorizontal && !aVertical) continue;
+
+                for (let sj = 0; sj < b.length - 1; sj++) {
+                    const b0 = b[sj];
+                    const b1 = b[sj + 1];
+                    const bHorizontal = Math.abs(b0.y - b1.y) < 0.01;
+                    const bVertical = Math.abs(b0.x - b1.x) < 0.01;
+                    if (aHorizontal === bHorizontal) continue; // need one H, one V
+                    if (!bHorizontal && !bVertical) continue;
+
+                    const h = aHorizontal ? { seg: a0.y, lo: Math.min(a0.x, a1.x), hi: Math.max(a0.x, a1.x) } : { seg: b0.y, lo: Math.min(b0.x, b1.x), hi: Math.max(b0.x, b1.x) };
+                    const v = aHorizontal ? { seg: b0.x, lo: Math.min(b0.y, b1.y), hi: Math.max(b0.y, b1.y) } : { seg: a0.x, lo: Math.min(a0.y, a1.y), hi: Math.max(a0.y, a1.y) };
+
+                    if (v.seg <= h.lo + margin || v.seg >= h.hi - margin) continue;
+                    if (h.seg <= v.lo + margin || h.seg >= v.hi - margin) continue;
+
+                    // (li, si) is the earlier line: it stays underneath. (lj, sj) jumps over it.
+                    const jx = v.seg;
+                    const jy = h.seg;
+                    const offset = Math.hypot(jx - b0.x, jy - b0.y);
+                    const list = result[lj].get(sj) ?? [];
+                    list.push(offset);
+                    result[lj].set(sj, list);
+                }
+            }
+        }
+    }
+
+    result.forEach((segMap) => segMap.forEach((offsets) => offsets.sort((x, y) => x - y)));
+    return result;
 }
 
 export function labelPoint(points: Point[]): Point {
