@@ -17,12 +17,12 @@ export class Terminator extends Shape {
         this.apply();
     }
 
-    /** Sets the saved start/end type and seeds the (still freely editable) label to match. */
+    
     setTerminatorType(type: TerminatorType) {
         this.terminatorType = type;
         const display = type === "start" ? "Start" : "End";
-        // Shown as a tooltip on hover — see the `.shape[data-terminator-type]:hover::after` rule.
-        this.element.dataset.terminatorType = display;
+        
+        this.element.dataset.tooltip = display;
         this.content.textContent = display;
     }
 }

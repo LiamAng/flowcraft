@@ -1,10 +1,10 @@
 import type { TerminatorType } from "./shapes";
 
-/**
- * Small popover asking whether a just-placed Terminator is a Start or an End.
- * Reuses the .link-picker card styling. Singleton: one menu element, reused
- * across calls; only one pick can be in flight at a time.
- */
+
+
+
+
+
 
 let menu: HTMLDivElement | null = null;
 let resolver: ((type: TerminatorType | null) => void) | null = null;
@@ -69,11 +69,11 @@ function ensureMenu(): HTMLDivElement {
     return el;
 }
 
-/** Opens the popover near (clientX, clientY) and resolves with the chosen type, or null if dismissed. */
+
 export function pickTerminatorType(clientX: number, clientY: number): Promise<TerminatorType | null> {
     const el = ensureMenu();
 
-    // Cancel any pick that's still hanging around (shouldn't normally happen).
+    
     finish(null);
 
     return new Promise((resolve) => {

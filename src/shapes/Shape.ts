@@ -1,14 +1,26 @@
-import { Router, roundedPath, labelPoint, findCrossingJumps, type Side, type RouteTarget, type RouteObstacle } from "../router";
+import { Router, roundedPath, labelPoint, findCrossingJumps, type Side, type Point, type RouteTarget, type RouteObstacle } from "../router";
 
 export type ResizeDirection = "n" | "s" | "e" | "w" | "ne" | "nw" | "se" | "sw";
 export type LinkDirection = "n" | "s" | "e" | "w";
+
+
+export type LinkRole = "next" | "altNext";
+
+
+
+
+
+export type Waypoint = { ox: number; oy: number; dir: LinkDirection };
 
 export type LinkRecord = {
     from: Shape;
     to: Shape;
     direction: LinkDirection;
+    role: LinkRole;
     label: string;
-    /** Which side of `to` the router last entered from. Set by renderConnections(); used to keep incoming lines off sides that are already in use. */
+    
+    waypoints?: Waypoint[];
+    
     entrySide?: LinkDirection;
 };
 
@@ -28,12 +40,26 @@ export class Shape {
     protected static ghostFrozen = false;
     protected static tracking = false;
     protected static ghostTarget = {};
+    protected static nextId = 0;
+    protected static renderSuspended = false;
+    protected static draggingLink: LinkRecord | null = null;
+    protected static lastLineClick: { link: LinkRecord; time: number } | null = null;
+    protected static groupDrag: { leader: Shape; startX: number; startY: number; origins: Map<Shape, { x: number; y: number }> } | null = null;
 
+    
+    public static selection = new Set<Shape>();
+
+    public readonly id = `shape-${++Shape.nextId}`;
     public element: HTMLElement;
     public content: HTMLElement;
     public posX = 0;
     public posY = 0;
-    public outgoingLinks: Array<{ direction: LinkDirection; label: string; to: Shape }> = [];
+    public outgoingLinks: Array<{ direction: LinkDirection; role: LinkRole; label: string; to: Shape }> = [];
+
+    
+    get next(): Shape | null {
+        return this.outgoingLinks.find((link) => link.role === "next")?.to ?? null;
+    }
 
     protected draggable = true;
     protected dragOffsetX = 0;
@@ -83,6 +109,35 @@ export class Shape {
 
     getSize(): { x: number; y: number } {
         return { x: this.width, y: this.height };
+    }
+
+    getCenter(): Point {
+        return { x: this.posX + this.width / 2, y: this.posY + this.height / 2 };
+    }
+
+    
+    protected syncLinkData() {
+        const write = (key: string, target: Shape | null) => {
+            if (target) {
+                this.element.dataset[key] = target.id;
+            } else {
+                delete this.element.dataset[key];
+            }
+        };
+        write("next", this.next);
+    }
+
+    
+
+    public static setSelection(shapes: Iterable<Shape>) {
+        Shape.selection = new Set(shapes);
+        Shape.all.forEach((shape) => shape.element.classList.toggle("selected", Shape.selection.has(shape)));
+    }
+
+    public static clearSelection() {
+        if (Shape.selection.size > 0) {
+            Shape.setSelection([]);
+        }
     }
 
     setCenter(x: number, y: number) {
@@ -177,14 +232,14 @@ export class Shape {
         return this.outgoingLinks.length;
     }
 
-    /**
-     * Sides of `shape` that already have a line touching them — either an
-     * outgoing link leaving from that side, or an incoming link's last-known
-     * entry side. Used both to hide a shape's link handles on occupied sides
-     * and to steer new/rerouted lines toward the sides that are still free.
-     * `exclude` leaves out one link's own entry (so re-routing that link
-     * doesn't count its previous position against itself).
-     */
+    
+
+
+
+
+
+
+
     protected static reservedSidesFor(shape: Shape, exclude?: LinkRecord): Set<LinkDirection> {
         const reserved = new Set<LinkDirection>(shape.outgoingLinks.map((link) => link.direction));
 
@@ -220,15 +275,20 @@ export class Shape {
             return;
         }
 
-        const record: LinkRecord = { from: this, to: target, direction, label };
+        
+        
+        const role: LinkRole = this.outgoingLinks.some((link) => link.role === "next") ? "altNext" : "next";
+        const record: LinkRecord = { from: this, to: target, direction, role, label };
         Shape.connections.push(record);
-        this.outgoingLinks.push({ direction, label, to: target });
+        this.outgoingLinks.push({ direction, role, label, to: target });
+        this.syncLinkData();
         Shape.renderConnections();
     }
 
     public static removeConnection(connection: LinkRecord) {
         Shape.connections = Shape.connections.filter((link) => link !== connection);
         connection.from.outgoingLinks = connection.from.outgoingLinks.filter((link) => link.to !== connection.to || link.direction !== connection.direction);
+        connection.from.syncLinkData();
         Shape.renderConnections();
     }
 
@@ -543,6 +603,10 @@ export class Shape {
     }
 
     protected static renderConnections() {
+        if (Shape.renderSuspended) {
+            return;
+        }
+
         const chart = document.querySelector(".chart") as HTMLElement | null;
         if (!chart) {
             return;
@@ -567,20 +631,23 @@ export class Shape {
 
         Shape.router.reset();
 
-        // Routing is stateful (each route avoids sides/paths already claimed), so it has to run
-        // for every link before line-crossing jumps can be worked out across all of them.
+        
+        
         const routed = Shape.connections.map((link) => {
             const anchors = Shape.buildTargetAnchors(link.to);
             const avoid = Shape.reservedSidesFor(link.to, link);
 
-            const route = Shape.router.route(
-                { shape: link.from, side: link.direction, point: Shape.getLinkAnchor(link.from, link.direction) },
-                { shape: link.to, anchors },
-                obstacles,
-                bounds,
-                true,
-                avoid
-            );
+            const source = { shape: link.from, side: link.direction, point: Shape.getLinkAnchor(link.from, link.direction) };
+            const dest = { shape: link.to, anchors };
+
+            let route;
+            if (link.waypoints && link.waypoints.length > 0) {
+                const c = link.from.getCenter();
+                const via = link.waypoints.map((w) => ({ point: { x: c.x + w.ox, y: c.y + w.oy }, dir: w.dir }));
+                route = Shape.router.routeVia(source, dest, via, obstacles, bounds, true, avoid);
+            } else {
+                route = Shape.router.route(source, dest, obstacles, bounds, true, avoid);
+            }
             link.entrySide = route.entry;
             return { link, points: route.points };
         });
@@ -596,13 +663,44 @@ export class Shape {
             path.setAttribute("stroke-linecap", "butt");
             path.setAttribute("stroke-linejoin", "round");
             path.setAttribute("marker-end", "url(#link-arrow-head)");
-            path.style.cursor = "pointer";
-            path.addEventListener("pointerdown", (event: PointerEvent) => {
-                event.preventDefault();
-                event.stopPropagation();
-                Shape.removeConnection(link);
-            });
+            const highlight = (on: boolean) => {
+                path.setAttribute("stroke", on ? "#6495ed" : "#475569");
+                path.setAttribute("stroke-width", on ? "2.5" : "1.75");
+            };
+            if (Shape.draggingLink === link) {
+                highlight(true);
+            }
             svg.appendChild(path);
+
+            
+            
+            for (let seg = 0; seg < points.length - 1; seg++) {
+                const a = points[seg];
+                const b = points[seg + 1];
+                const horizontal = Math.abs(a.y - b.y) < 0.01;
+                if (!horizontal && Math.abs(a.x - b.x) >= 0.01) {
+                    continue;
+                }
+
+                const hit = document.createElementNS("http://www.w3.org/2000/svg", "line");
+                hit.setAttribute("class", "link-hit");
+                hit.setAttribute("x1", `${a.x}`);
+                hit.setAttribute("y1", `${a.y}`);
+                hit.setAttribute("x2", `${b.x}`);
+                hit.setAttribute("y2", `${b.y}`);
+                hit.setAttribute("stroke", "transparent");
+                hit.setAttribute("stroke-width", "12");
+                hit.style.pointerEvents = "stroke";
+                hit.style.cursor = horizontal ? "ns-resize" : "ew-resize";
+                hit.addEventListener("pointerenter", () => highlight(true));
+                hit.addEventListener("pointerleave", () => {
+                    if (Shape.draggingLink !== link) {
+                        highlight(false);
+                    }
+                });
+                hit.addEventListener("pointerdown", (event: PointerEvent) => Shape.beginLineDrag(link, points, seg, event));
+                svg.appendChild(hit);
+            }
 
             const mid = labelPoint(points);
             const label = document.createElement("div");
@@ -629,6 +727,115 @@ export class Shape {
         if (Shape.pendingLink) {
             Shape.renderGhost();
         }
+    }
+
+    
+
+
+
+
+    protected static beginLineDrag(link: LinkRecord, points: Point[], seg: number, event: PointerEvent) {
+        if (event.button !== 0 || Shape.pendingLink) {
+            return;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+
+        const p0 = points[seg];
+        const p1 = points[seg + 1];
+        const horizontal = Math.abs(p0.y - p1.y) < 0.01;
+        const dir: LinkDirection = horizontal ? (p1.x >= p0.x ? "e" : "w") : p1.y >= p0.y ? "s" : "n";
+        const centre = link.from.getCenter();
+        const waypoints = [...(link.waypoints ?? [])];
+        const absolute = (w: Waypoint): Point => ({ x: centre.x + w.ox, y: centre.y + w.oy });
+
+        
+        const segmentOf = (w: Waypoint): number => {
+            const at = absolute(w);
+            for (let i = 0; i < points.length - 1; i++) {
+                const a = points[i];
+                const b = points[i + 1];
+                const onH = Math.abs(a.y - b.y) < 0.01 && Math.abs(at.y - a.y) < 1.5 && at.x >= Math.min(a.x, b.x) - 1.5 && at.x <= Math.max(a.x, b.x) + 1.5;
+                const onV = Math.abs(a.x - b.x) < 0.01 && Math.abs(at.x - a.x) < 1.5 && at.y >= Math.min(a.y, b.y) - 1.5 && at.y <= Math.max(a.y, b.y) + 1.5;
+                if (onH || onV) {
+                    return i;
+                }
+            }
+            return -1;
+        };
+
+        
+        
+        let index = waypoints.findIndex((w) => segmentOf(w) === seg);
+        const isNew = index < 0;
+        const base: Point = isNew ? { x: (p0.x + p1.x) / 2, y: (p0.y + p1.y) / 2 } : absolute(waypoints[index]);
+        const insertAt = isNew ? waypoints.filter((w) => {
+            const at = segmentOf(w);
+            return at >= 0 && at < seg;
+        }).length : index;
+
+        const startX = event.clientX;
+        const startY = event.clientY;
+        let moved = false;
+        const previousCursor = document.body.style.cursor;
+
+        const onMove = (moveEvent: PointerEvent) => {
+            const dx = moveEvent.clientX - startX;
+            const dy = moveEvent.clientY - startY;
+            if (!moved && Math.hypot(dx, dy) < 3) {
+                return;
+            }
+            if (!moved) {
+                moved = true;
+                Shape.draggingLink = link;
+                document.body.style.cursor = horizontal ? "ns-resize" : "ew-resize";
+            }
+
+            const at = horizontal ? { x: base.x, y: base.y + dy } : { x: base.x + dx, y: base.y };
+            const waypoint: Waypoint = { ox: at.x - centre.x, oy: at.y - centre.y, dir };
+            if (isNew && index < 0) {
+                waypoints.splice(insertAt, 0, waypoint);
+                index = insertAt;
+            } else {
+                waypoints[index] = waypoint;
+            }
+            link.waypoints = [...waypoints];
+            Shape.renderConnections();
+        };
+
+        const onUp = () => {
+            document.removeEventListener("pointermove", onMove);
+            document.removeEventListener("pointerup", onUp);
+            document.removeEventListener("pointercancel", onUp);
+            document.body.style.cursor = previousCursor;
+            if (Shape.draggingLink) {
+                Shape.draggingLink = null;
+                Shape.renderConnections();
+            }
+
+            if (moved) {
+                Shape.lastLineClick = null;
+                return;
+            }
+
+            
+            
+            const now = performance.now();
+            const previous = Shape.lastLineClick;
+            if (previous && previous.link === link && now - previous.time < 400) {
+                Shape.lastLineClick = null;
+                if (link.waypoints && link.waypoints.length > 0) {
+                    link.waypoints = [];
+                    Shape.renderConnections();
+                }
+            } else {
+                Shape.lastLineClick = { link, time: now };
+            }
+        };
+
+        document.addEventListener("pointermove", onMove);
+        document.addEventListener("pointerup", onUp);
+        document.addEventListener("pointercancel", onUp);
     }
 
     protected minWidthForHeight(height: number, start: number): number {
@@ -782,13 +989,63 @@ export class Shape {
             return;
         }
 
+        
+        if (event.shiftKey) {
+            event.preventDefault();
+            const next = new Set(Shape.selection);
+            if (!next.delete(this)) {
+                next.add(this);
+            }
+            Shape.setSelection(next);
+            return;
+        }
+
+        if (!Shape.selection.has(this)) {
+            Shape.clearSelection();
+        }
+
         this.isDragging = true;
         this.dragOffsetX = event.clientX - this.posX;
         this.dragOffsetY = event.clientY - this.posY;
+
+        if (Shape.selection.size > 1) {
+            
+            event.preventDefault(); 
+            Shape.groupDrag = {
+                leader: this,
+                startX: event.clientX,
+                startY: event.clientY,
+                origins: new Map([...Shape.selection].map((shape) => [shape, { x: shape.posX, y: shape.posY }])),
+            };
+        }
     }
 
     onMouseMove(event: MouseEvent) {
         if (!this.isDragging) {
+            return;
+        }
+
+        const group = Shape.groupDrag;
+        if (group && group.leader === this) {
+            const chart = document.querySelector(".chart") as HTMLElement | null;
+            const bounds = chart ?? document.body;
+            let dx = event.clientX - group.startX;
+            let dy = event.clientY - group.startY;
+            
+            group.origins.forEach((origin, shape) => {
+                dx = Math.max(-origin.x, Math.min(dx, bounds.clientWidth - shape.width - origin.x));
+                dy = Math.max(-origin.y, Math.min(dy, bounds.clientHeight - shape.height - origin.y));
+            });
+
+            Shape.renderSuspended = true;
+            group.origins.forEach((origin, shape) => {
+                shape.posX = origin.x + dx;
+                shape.posY = origin.y + dy;
+                shape.apply();
+            });
+            Shape.renderSuspended = false;
+            Shape.renderConnections();
+            this.element.style.cursor = "grabbing";
             return;
         }
 
@@ -800,6 +1057,9 @@ export class Shape {
     }
 
     onMouseUp() {
+        if (Shape.groupDrag?.leader === this) {
+            Shape.groupDrag = null;
+        }
         this.isDragging = false;
         this.dragOffsetX = 0;
         this.dragOffsetY = 0;
@@ -810,6 +1070,7 @@ export class Shape {
         Shape.all.push(this);
         this.element = document.createElement("div");
         this.element.classList.add("shape");
+        this.element.dataset.id = this.id;
         this.content = document.createElement("div");
         this.content.classList.add("content");
         this.content.innerHTML = "<br>";
@@ -845,7 +1106,7 @@ export class Shape {
 
         this.element.addEventListener("mousedown", (event: MouseEvent) => {
             if (Shape.pendingLink && Shape.pendingLink.source !== this) {
-                event.preventDefault(); // don't drop a text caret into the target
+                event.preventDefault(); 
                 Shape.completeLink(this);
                 return;
             }

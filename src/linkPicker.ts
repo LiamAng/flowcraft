@@ -1,4 +1,4 @@
-import { Shape, Process, Decision, InputOutput } from "./shapes";
+import { Shape, Process, Decision, InputOutput, Terminator } from "./shapes";
 
 type Option = { label: string; icon: string; create: () => Shape };
 
@@ -6,6 +6,8 @@ const OPTIONS: Option[] = [
     { label: "Process", icon: "process", create: () => new Process() },
     { label: "Decision", icon: "decision", create: () => new Decision() },
     { label: "Input / Output", icon: "io", create: () => new InputOutput() },
+    
+    { label: "Terminator (End)", icon: "terminator", create: () => new Terminator("end") },
 ];
 
 export function initLinkPicker(chart: HTMLElement, addShape: (shape: Shape) => Shape) {

@@ -2,6 +2,8 @@ import { Shape, Process, Decision, InputOutput, Terminator } from "./shapes";
 import { pickTerminatorType } from "./terminatorPicker";
 import { Simulator } from "./simulator";
 import { initLinkPicker } from "./linkPicker";
+import { initSelection } from "./selection";
+import { initTooltip } from "./tooltip";
 
 export const chart: HTMLElement = document.querySelector('.chart') as HTMLElement;
 const palette = document.getElementById('shape-palette') as HTMLDivElement;
@@ -120,3 +122,5 @@ function renderPalette() {
 
 renderPalette();
 initLinkPicker(chart, addShape);
+initSelection(chart);
+initTooltip();
