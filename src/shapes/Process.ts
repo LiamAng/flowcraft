@@ -1,6 +1,10 @@
 import { Shape } from "./Shape";
 
 export class Process extends Shape {
+    protected override isProgrammable(): boolean {
+        return true;
+    }
+
     constructor() {
         super();
         this.content.classList.add("rectangle");

@@ -5,6 +5,10 @@ export type TerminatorType = "start" | "end";
 export class Terminator extends Shape {
     public terminatorType: TerminatorType = "start";
 
+    protected override getLinkLimit(): number {
+        return this.terminatorType === "end" ? 0 : 1;
+    }
+
     constructor(type: TerminatorType = "start") {
         super();
         this.content.classList.add("pill");

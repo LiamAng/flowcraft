@@ -1,6 +1,10 @@
 import { Shape, LinkDirection } from "./Shape";
 
 export class InputOutput extends Shape {
+    protected override isProgrammable(): boolean {
+        return true;
+    }
+
     protected override getEdgePoint(direction: LinkDirection): { x: number; y: number } {
         const point = super.getEdgePoint(direction);
         if (direction === "w") {

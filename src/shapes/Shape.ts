@@ -1,4 +1,5 @@
 import { Router, roundedPath, labelPoint, findCrossingJumps, type Side, type Point, type RouteTarget, type RouteObstacle } from "../router";
+import { openProgramEditor } from "../programEditor";
 
 export type ResizeDirection = "n" | "s" | "e" | "w" | "ne" | "nw" | "se" | "sw";
 export type LinkDirection = "n" | "s" | "e" | "w";
@@ -51,6 +52,7 @@ export class Shape {
     public posX = 0;
     public posY = 0;
     public outgoingLinks: Array<{ direction: LinkDirection; role: LinkRole; label: string; to: Shape }> = [];
+    public programCode = "";
 
     get next(): Shape | null {
         return this.outgoingLinks.find((link) => link.role === "next")?.to ?? null;
@@ -260,6 +262,10 @@ export class Shape {
 
     protected getLinkLimit(): number {
         return 1;
+    }
+
+    protected isProgrammable(): boolean {
+        return false;
     }
 
     protected getOutgoingLinkCount(): number {
@@ -1178,6 +1184,40 @@ export class Shape {
             });
             this.element.appendChild(linkHandle);
         });
+
+        const actions = document.createElement("div");
+        actions.className = "shape-actions";
+
+        if (this.isProgrammable()) {
+            const programButton = document.createElement("button");
+            programButton.type = "button";
+            programButton.className = "shape-action";
+            programButton.title = "Edit code";
+            programButton.setAttribute("aria-label", "Edit shape code");
+            programButton.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5-6 7 6 7M16 5l6 7-6 7M14 3l-4 18"/></svg>';
+            programButton.addEventListener("click", (event) => {
+                event.stopPropagation();
+                openProgramEditor(this);
+            });
+            programButton.addEventListener("pointerdown", (event) => event.stopPropagation());
+            programButton.addEventListener("mousedown", (event) => event.stopPropagation());
+            actions.appendChild(programButton);
+        }
+
+        const deleteButton = document.createElement("button");
+        deleteButton.type = "button";
+        deleteButton.className = "shape-action delete-shape";
+        deleteButton.title = "Delete shape";
+        deleteButton.setAttribute("aria-label", "Delete shape");
+        deleteButton.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2m3 0-1 14H6L5 6m4 4v6m6-6v6"/></svg>';
+        deleteButton.addEventListener("click", (event) => {
+            event.stopPropagation();
+            Shape.removeShapes([this]);
+        });
+        deleteButton.addEventListener("pointerdown", (event) => event.stopPropagation());
+        deleteButton.addEventListener("mousedown", (event) => event.stopPropagation());
+        actions.appendChild(deleteButton);
+        this.element.appendChild(actions);
 
         this.updateResizeHandles();
         this.updateLinkHandles();

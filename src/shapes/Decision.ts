@@ -1,6 +1,10 @@
 import { Shape, ResizeDirection } from "./Shape";
 
 export class Decision extends Shape {
+    protected override isProgrammable(): boolean {
+        return true;
+    }
+
     protected override getResizeDirections(): ResizeDirection[] {
         return ["n", "s", "e", "w"];
     }
