@@ -43,6 +43,8 @@ export class Shape {
     protected static nextId = 0;
     protected static renderSuspended = false;
     protected static draggingLink: LinkRecord | null = null;
+    protected static selectedLink: LinkRecord | null = null;
+    protected static deleteHooked = false;
     protected static lastLineClick: { link: LinkRecord; time: number } | null = null;
     protected static groupDrag: { leader: Shape; startX: number; startY: number; origins: Map<Shape, { x: number; y: number }> } | null = null;
 
@@ -208,10 +210,11 @@ export class Shape {
     protected updateLinkHandles() {
         const supported = this.getLinkDirections();
         const used = Shape.reservedSidesFor(this);
+        const atLimit = this.getOutgoingLinkCount() >= this.getLinkLimit();
 
         this.element.querySelectorAll<HTMLButtonElement>(".link-handle").forEach((handle) => {
             const dir = handle.dataset.linkDir as LinkDirection | undefined;
-            if (!dir || !supported.includes(dir)) {
+            if (!dir || !supported.includes(dir) || atLimit) {
                 handle.style.display = "none";
                 return;
             }
@@ -287,7 +290,15 @@ export class Shape {
 
     public static removeConnection(connection: LinkRecord) {
         Shape.connections = Shape.connections.filter((link) => link !== connection);
-        connection.from.outgoingLinks = connection.from.outgoingLinks.filter((link) => link.to !== connection.to || link.direction !== connection.direction);
+        connection.from.outgoingLinks = connection.from.outgoingLinks.filter((link) =>
+            link.role !== connection.role || link.to !== connection.to || link.direction !== connection.direction
+        );
+        if (Shape.selectedLink === connection) {
+            Shape.selectedLink = null;
+        }
+        if (Shape.draggingLink === connection) {
+            Shape.draggingLink = null;
+        }
         connection.from.syncLinkData();
         Shape.renderConnections();
     }
@@ -569,6 +580,32 @@ export class Shape {
             chart.appendChild(layer);
         }
 
+        if (!Shape.deleteHooked) {
+            Shape.deleteHooked = true;
+            document.addEventListener(
+                "pointerdown",
+                (event: PointerEvent) => {
+                    const onLink = event.target instanceof Element && event.target.closest(".link-hit, .link-turn");
+                    if (!onLink && Shape.selectedLink) {
+                        Shape.selectedLink = null;
+                        Shape.renderConnections();
+                    }
+                },
+                true
+            );
+            document.addEventListener("keydown", (event: KeyboardEvent) => {
+                if ((event.key !== "Delete" && event.key !== "Backspace") || !Shape.selectedLink) {
+                    return;
+                }
+                const active = document.activeElement as HTMLElement | null;
+                if (active?.isContentEditable || active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement || active instanceof HTMLSelectElement) {
+                    return;
+                }
+                event.preventDefault();
+                Shape.removeConnection(Shape.selectedLink);
+            });
+        }
+
         if (!Shape.ghostLayer) {
             const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
             svg.setAttribute("class", "ghost-layer");
@@ -667,7 +704,7 @@ export class Shape {
                 path.setAttribute("stroke", on ? "#6495ed" : "#475569");
                 path.setAttribute("stroke-width", on ? "2.5" : "1.75");
             };
-            if (Shape.draggingLink === link) {
+            if (Shape.draggingLink === link || Shape.selectedLink === link) {
                 highlight(true);
             }
             svg.appendChild(path);
@@ -694,12 +731,46 @@ export class Shape {
                 hit.style.cursor = horizontal ? "ns-resize" : "ew-resize";
                 hit.addEventListener("pointerenter", () => highlight(true));
                 hit.addEventListener("pointerleave", () => {
-                    if (Shape.draggingLink !== link) {
+                    if (Shape.draggingLink !== link && Shape.selectedLink !== link) {
                         highlight(false);
                     }
                 });
                 hit.addEventListener("pointerdown", (event: PointerEvent) => Shape.beginLineDrag(link, points, seg, event));
                 svg.appendChild(hit);
+            }
+
+            if (Shape.selectedLink === link) {
+                const centre = link.from.getCenter();
+                (link.waypoints ?? []).forEach((waypoint, waypointIndex) => {
+                    const corner = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+                    corner.setAttribute("class", "link-turn");
+                    corner.setAttribute("cx", `${centre.x + waypoint.ox}`);
+                    corner.setAttribute("cy", `${centre.y + waypoint.oy}`);
+                    corner.setAttribute("r", "7");
+                    corner.setAttribute("role", "button");
+                    corner.setAttribute("tabindex", "0");
+                    corner.setAttribute("aria-label", "Delete flowline corner");
+                    corner.setAttribute("title", "Delete corner");
+                    corner.style.pointerEvents = "all";
+                    const removeCorner = () => {
+                        const waypoints = [...(link.waypoints ?? [])];
+                        waypoints.splice(waypointIndex, 1);
+                        link.waypoints = waypoints.length > 0 ? waypoints : undefined;
+                        Shape.renderConnections();
+                    };
+                    corner.addEventListener("pointerdown", (event: PointerEvent) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                    });
+                    corner.addEventListener("click", removeCorner);
+                    corner.addEventListener("keydown", (event: KeyboardEvent) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            removeCorner();
+                        }
+                    });
+                    svg.appendChild(corner);
+                });
             }
 
             const mid = labelPoint(points);
@@ -815,17 +886,19 @@ export class Shape {
 
             if (moved) {
                 Shape.lastLineClick = null;
+                Shape.selectedLink = link;
+                Shape.renderConnections();
                 return;
             }
 
-            
-            
+            Shape.selectedLink = link;
+            Shape.renderConnections();
             const now = performance.now();
             const previous = Shape.lastLineClick;
             if (previous && previous.link === link && now - previous.time < 400) {
                 Shape.lastLineClick = null;
                 if (link.waypoints && link.waypoints.length > 0) {
-                    link.waypoints = [];
+                    link.waypoints = undefined;
                     Shape.renderConnections();
                 }
             } else {
@@ -1135,5 +1208,3 @@ export class Shape {
         Shape.renderConnections();
     }
 }
-
-
