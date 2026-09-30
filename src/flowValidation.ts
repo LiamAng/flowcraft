@@ -1,6 +1,7 @@
 import { Shape } from "./shapes";
 import { Decision } from "./shapes/Decision";
 import { Terminator } from "./shapes/Terminator";
+import { settings } from "./settings";
 
 export function validateFlowchart(): string[] {
     const issues: string[] = [];
@@ -23,7 +24,8 @@ export function validateFlowchart(): string[] {
             const yesCount = outgoing.filter((link) => link.role === "next").length;
             const noCount = outgoing.filter((link) => link.role === "altNext").length;
             if (yesCount !== 1 || noCount !== 1) {
-                issues.push(`${shapeLabel(shape)} needs one Yes and one No flowline.`);
+                const [positive, negative] = settings.decisionBranchLabels === "true-false" ? ["True", "False"] : ["Yes", "No"];
+                issues.push(`${shapeLabel(shape)} needs one ${positive} and one ${negative} flowline.`);
             }
         }
     });
@@ -75,6 +77,7 @@ function walk(origin: Shape, reverse: boolean): Set<Shape> {
 export function initFlowValidation() {
     const container = document.createElement("div");
     container.className = "flow-validation";
+    container.setAttribute("aria-label", "Flowchart warnings");
 
     const button = document.createElement("button");
     button.type = "button";

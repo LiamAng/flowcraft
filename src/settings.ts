@@ -1,6 +1,9 @@
 import { Shape } from "./shapes";
 
 export type Settings = {
+    title: string;
+    description: string;
+    decisionBranchLabels: "yes-no" | "true-false";
     readOnly: boolean;
     snap: boolean;
     gridSize: number;
@@ -11,9 +14,13 @@ export type Settings = {
     inputs: Record<string, unknown>;
     simulationRatio: number;
     valueAccuracy: number;
+    simulationStepDelay: number;
 };
 
 export const defaultSettings: Settings = {
+    title: "",
+    description: "",
+    decisionBranchLabels: "yes-no",
     readOnly: false,
     snap: true,
     gridSize: 40,
@@ -24,6 +31,7 @@ export const defaultSettings: Settings = {
     inputs: {},
     simulationRatio: 0.32,
     valueAccuracy: 2,
+    simulationStepDelay: 0,
 };
 
 export const settings: Settings = { ...defaultSettings, inputs: {} };
@@ -32,6 +40,11 @@ export function sanitizeSettings(raw: unknown): Partial<Settings> {
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
     const value = raw as Record<string, unknown>;
     const result: Partial<Settings> = {};
+    if (typeof value.title === "string") result.title = value.title.slice(0, 120);
+    if (typeof value.description === "string") result.description = value.description.slice(0, 500);
+    if (value.decisionBranchLabels === "yes-no" || value.decisionBranchLabels === "true-false") {
+        result.decisionBranchLabels = value.decisionBranchLabels;
+    }
     (["readOnly", "snap", "guides", "showGrid", "showSteps", "autorun"] as const).forEach((key) => {
         if (typeof value[key] === "boolean") result[key] = value[key] as boolean;
     });
@@ -47,14 +60,24 @@ export function sanitizeSettings(raw: unknown): Partial<Settings> {
     if (typeof value.valueAccuracy === "number" && Number.isFinite(value.valueAccuracy)) {
         result.valueAccuracy = Math.max(0, Math.min(10, Math.round(value.valueAccuracy)));
     }
+    const simulationStepDelay = value.simulationStepDelay;
+    if (typeof simulationStepDelay === "number" && Number.isFinite(simulationStepDelay)) {
+        const delays = [0, 100, 250, 500, 1000];
+        result.simulationStepDelay = delays.reduce((nearest, delay) =>
+            Math.abs(delay - simulationStepDelay) < Math.abs(nearest - simulationStepDelay) ? delay : nearest, delays[0]);
+    }
     return result;
 }
 
 export function applySettings(patch: Partial<Settings>) {
+    const branchLabelsChanged = patch.decisionBranchLabels !== undefined &&
+        patch.decisionBranchLabels !== settings.decisionBranchLabels;
     Object.assign(settings, sanitizeSettings(patch));
     Shape.readOnly = settings.readOnly;
     Shape.showSimulationFlowline = settings.showSteps;
+    Shape.decisionBranchLabels = settings.decisionBranchLabels;
     document.documentElement.classList.toggle("read-only", settings.readOnly);
+    if (branchLabelsChanged) Shape.refreshConnections();
     document.dispatchEvent(new CustomEvent("flowcraft:settings"));
 }
 

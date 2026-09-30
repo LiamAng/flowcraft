@@ -2,7 +2,11 @@ import { downloadDiagram, importDiagramJson } from "./diagramFile";
 import { Shape } from "./shapes";
 import { initSettingsPanel } from "./settingsPanel";
 
-export async function initDiagramIO(addShape: (shape: Shape) => Shape, fitView: () => void): Promise<boolean> {
+export async function initDiagramIO(
+    addShape: (shape: Shape) => Shape,
+    fitView: () => void,
+    onImport: () => void
+): Promise<boolean> {
     const tools = document.createElement("div");
     tools.className = "diagram-file-tools";
 
@@ -16,21 +20,6 @@ export async function initDiagramIO(addShape: (shape: Shape) => Shape, fitView: 
         status.classList.toggle("error", error);
         status.hidden = false;
     };
-
-    const badge = document.createElement("span");
-    badge.className = "readonly-badge";
-    badge.textContent = "Read only";
-
-    const settingsButton = initSettingsPanel();
-
-    const exportButton = document.createElement("button");
-    exportButton.type = "button";
-    exportButton.textContent = "Export";
-    exportButton.addEventListener("click", downloadDiagram);
-
-    const importButton = document.createElement("button");
-    importButton.type = "button";
-    importButton.textContent = "Import";
 
     const fileInput = document.createElement("input");
     fileInput.type = "file";
@@ -46,12 +35,17 @@ export async function initDiagramIO(addShape: (shape: Shape) => Shape, fitView: 
             importDiagramJson(await file.text(), addShape);
             fitView();
             status.hidden = true;
+            onImport();
         } catch (error) {
             report(error instanceof Error ? error.message : "Could not import the flowchart file.", true);
         }
     });
-    importButton.addEventListener("click", () => fileInput.click());
-    tools.append(badge, settingsButton, exportButton, importButton, fileInput);
+    const settingsButton = initSettingsPanel({
+        exportDiagram: downloadDiagram,
+        importDiagram: () => fileInput.click(),
+    });
+    settingsButton.hidden = new URLSearchParams(window.location.search).has("hideSettings");
+    tools.append(settingsButton, fileInput);
 
     tools.appendChild(status);
     document.body.appendChild(tools);
@@ -59,6 +53,7 @@ export async function initDiagramIO(addShape: (shape: Shape) => Shape, fitView: 
     const url = new URLSearchParams(window.location.search).get("url");
     if (!url) {
         fitView();
+        onImport();
         return true;
     }
 
@@ -75,6 +70,7 @@ export async function initDiagramIO(addShape: (shape: Shape) => Shape, fitView: 
         importDiagramJson(await response.text(), addShape);
         fitView();
         status.hidden = true;
+        onImport();
         return true;
     } catch (error) {
         report(error instanceof Error ? error.message : "Could not load flowchart from the URL.", true);

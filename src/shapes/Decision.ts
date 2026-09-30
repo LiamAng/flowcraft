@@ -17,11 +17,27 @@ export class Decision extends Shape {
         return true;
     }
 
+    protected override getEdgePoint(direction: "n" | "s" | "e" | "w"): { x: number; y: number } {
+        const left = this.element.offsetLeft;
+        const top = this.element.offsetTop;
+        const width = this.element.offsetWidth;
+        const height = this.element.offsetHeight;
+        const centerX = left + width / 2;
+        const centerY = top + height / 2;
+        if (direction === "n") return { x: centerX, y: top };
+        if (direction === "s") return { x: centerX, y: top + height };
+        if (direction === "w") return { x: left, y: centerY };
+        return { x: left + width, y: centerY };
+    }
+
     protected override getLinkLimit(): number {
         return 2;
     }
 
     protected override getBranchLabel(role: "next" | "altNext"): string {
+        if (Shape.decisionBranchLabels === "true-false") {
+            return role === "next" ? "True" : "False";
+        }
         return role === "next" ? "Yes" : "No";
     }
 

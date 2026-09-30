@@ -19,6 +19,25 @@ const palette = document.getElementById('shape-palette') as HTMLDivElement;
 
 applySettings(settings);
 
+const heading = document.querySelector<HTMLElement>(".flowchart-heading");
+const renderHeading = () => {
+    if (!heading) return;
+    heading.replaceChildren();
+    if (settings.title) {
+        const title = document.createElement("h1");
+        title.textContent = settings.title;
+        heading.appendChild(title);
+    }
+    if (settings.description) {
+        const description = document.createElement("p");
+        description.textContent = settings.description;
+        heading.appendChild(description);
+    }
+    document.title = settings.title || "Flowcraft";
+};
+document.addEventListener("flowcraft:settings", renderHeading);
+renderHeading();
+
 const factoryMap = {
     process: () => new Process(),
     decision: () => new Decision(),
@@ -143,6 +162,4 @@ initSelection(chart);
 initTooltip();
 initFlowValidation();
 const autorun = initSimulationPanel();
-void initDiagramIO(addShape, viewport.fit).then((loaded) => {
-    if (loaded) autorun();
-});
+void initDiagramIO(addShape, viewport.fit, autorun);

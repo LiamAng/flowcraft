@@ -111,12 +111,9 @@ export class Router {
         };
 
         const preferred = avoid && avoid.size > 0 ? SIDES.filter((side) => !avoid.has(side)) : SIDES;
-        let best = preferred.length > 0 ? attempt(preferred) : null;
-        if (!best && preferred.length < SIDES.length) {
-            best = attempt(SIDES);
-        }
-
-        const result: RouteResult = best ?? this.fallback(src, dst);
+        const allowedSides = preferred.length > 0 ? preferred : SIDES;
+        const best = attempt(allowedSides);
+        const result: RouteResult = best ?? this.fallback(src, dst, allowedSides);
         if (remember) this.remember(result.points);
         return { points: result.points, entry: result.entry };
     }
@@ -359,11 +356,11 @@ export class Router {
         };
     }
 
-    private fallback(src: RouteSource, dst: RouteTarget): RouteResult {
+    private fallback(src: RouteSource, dst: RouteTarget, allowedSides: readonly Side[] = SIDES): RouteResult {
         const cfg = ROUTE_STYLE;
         let entry: Side = "n";
         let bestDistance = Infinity;
-        for (const side of SIDES) {
+        for (const side of allowedSides) {
             const a = dst.anchors[side];
             const d = Math.abs(a.x - src.point.x) + Math.abs(a.y - src.point.y);
             if (d < bestDistance) {

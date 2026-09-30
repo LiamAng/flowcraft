@@ -122,6 +122,24 @@ export function initSimulationPanel() {
     panel.className = "simulation-panel";
     panel.setAttribute("aria-label", "Flowchart simulation");
 
+    const header = document.createElement("div");
+    header.className = "simulation-header";
+    const heading = document.createElement("h2");
+    heading.textContent = "Simulation";
+    const collapseButton = document.createElement("button");
+    collapseButton.type = "button";
+    collapseButton.className = "simulation-collapse";
+    collapseButton.textContent = "Collapse";
+    collapseButton.setAttribute("aria-expanded", "true");
+    collapseButton.setAttribute("aria-label", "Collapse simulation panel");
+    collapseButton.addEventListener("click", () => {
+        const collapsed = document.documentElement.classList.toggle("simulation-collapsed");
+        collapseButton.textContent = collapsed ? "Expand" : "Collapse";
+        collapseButton.setAttribute("aria-expanded", String(!collapsed));
+        collapseButton.setAttribute("aria-label", `${collapsed ? "Expand" : "Collapse"} simulation panel`);
+    });
+    header.append(heading, collapseButton);
+
     const controls = document.createElement("div");
     controls.className = "simulation-controls";
 
@@ -148,7 +166,15 @@ export function initSimulationPanel() {
     const table = document.createElement("table");
     table.className = "simulation-table";
     tableWrapper.appendChild(table);
-    panel.append(controls, tableWrapper, status);
+    const wholeOutputPanel = document.createElement("section");
+    wholeOutputPanel.className = "simulation-output";
+    wholeOutputPanel.hidden = true;
+    const wholeOutputHeading = document.createElement("h3");
+    wholeOutputHeading.textContent = "Whole output";
+    const wholeOutputContent = document.createElement("pre");
+    wholeOutputContent.className = "simulation-output-content";
+    wholeOutputPanel.append(wholeOutputHeading, wholeOutputContent);
+    panel.append(header, controls, tableWrapper, wholeOutputPanel, status);
     document.body.appendChild(panel);
     document.body.appendChild(splitter);
 
@@ -195,8 +221,8 @@ export function initSimulationPanel() {
     let current: Shape | null = null;
     let previousConnection: LinkRecord | null = null;
     let lastOutput: unknown = "";
+    let wholeOutput: unknown[] = [];
     let rows: SimulationRow[] = [];
-    let conditions: Record<string, boolean> = {};
     let running = false;
 
     const renderTable = () => {
@@ -234,7 +260,8 @@ export function initSimulationPanel() {
             });
             decisionShapes.forEach((shape) => {
                 const cell = document.createElement("td");
-                cell.textContent = row.conditions[shape.id] === undefined ? "" : row.conditions[shape.id] ? "true" : "false";
+                const condition = row.conditions[shape.id];
+                cell.textContent = condition === undefined ? "" : condition ? "true" : "false";
                 cell.style.backgroundColor = columnColor(`condition:${shape.id}`);
                 tr.appendChild(cell);
             });
@@ -245,6 +272,13 @@ export function initSimulationPanel() {
         });
         table.appendChild(body);
         tableWrapper.scrollTop = tableWrapper.scrollHeight;
+    };
+
+    const renderWholeOutput = () => {
+        wholeOutputContent.textContent = wholeOutput.length > 0
+            ? wholeOutput.map((value) => display(value, settings.valueAccuracy)).join("\n")
+            : "No output.";
+        wholeOutputPanel.hidden = false;
     };
 
     const setError = (error: unknown) => {
@@ -268,8 +302,9 @@ export function initSimulationPanel() {
         current = starts[0];
         previousConnection = null;
         lastOutput = "";
+        wholeOutput = [];
         rows = [];
-        conditions = {};
+        wholeOutputPanel.hidden = true;
         simulator.reset();
         renderTable();
         setStatus("Ready");
@@ -304,21 +339,23 @@ export function initSimulationPanel() {
         } else if (shape instanceof Decision) {
             if (!shape.programCode.trim()) throw new Error(`Enter a true/false expression in Decision ${shape.id}'s code.`);
             condition = Boolean(simulator.evaluate(shape.programCode));
-            conditions[shape.id] = condition;
         } else if (shape instanceof InputOutput && shape.inputOutputType === "output") {
             if (!shape.programCode.trim()) throw new Error(`Enter an expression in Output ${shape.id}'s code.`);
             lastOutput = simulator.evaluate(shape.programCode);
+            wholeOutput.push(lastOutput);
         } else if (shape instanceof Process && shape.programCode.trim()) {
             simulator.exec(shape.programCode);
         }
 
-        rows.push({
-            step: rows.length + 1,
-            shape,
-            variables: { ...simulator.getScope() },
-            conditions: { ...conditions },
-            output: shape instanceof InputOutput && shape.inputOutputType === "output" ? lastOutput : "",
-        });
+        if (!(shape instanceof Terminator)) {
+            rows.push({
+                step: rows.length + 1,
+                shape,
+                variables: { ...simulator.getScope() },
+                conditions: shape instanceof Decision && condition !== undefined ? { [shape.id]: condition } : {},
+                output: shape instanceof InputOutput && shape.inputOutputType === "output" ? lastOutput : "",
+            });
+        }
 
         let connection: LinkRecord | undefined;
         if (shape instanceof Decision) {
@@ -335,6 +372,7 @@ export function initSimulationPanel() {
 
         if (!current) {
             setStatus("Finished");
+            renderWholeOutput();
             return false;
         }
         setStatus(`Step ${rows.length}`);
@@ -354,8 +392,9 @@ export function initSimulationPanel() {
         current = null;
         previousConnection = null;
         lastOutput = "";
+        wholeOutput = [];
         rows = [];
-        conditions = {};
+        wholeOutputPanel.hidden = true;
         renderTable();
         setStatus("Ready");
         Shape.setSimulationFocus(null);
@@ -368,7 +407,9 @@ export function initSimulationPanel() {
         nextButton.disabled = true;
         runButton.disabled = true;
         try {
-            while (await step()) await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
+            while (await step()) {
+                await new Promise<void>((resolve) => window.setTimeout(resolve, settings.simulationStepDelay));
+            }
         } catch (error) {
             setError(error);
         } finally {

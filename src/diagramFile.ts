@@ -8,6 +8,8 @@ type SavedShape = {
     type: ShapeType;
     x: number;
     y: number;
+    width?: number;
+    height?: number;
     text: string;
     programCode: string;
     terminatorType?: "start" | "end";
@@ -58,6 +60,8 @@ function parseDiagram(json: string): DiagramFile {
             typeof shape.id !== "string" || !shape.id || ids.has(shape.id) ||
             !["process", "decision", "input-output", "terminator"].includes(shape.type) ||
             !Number.isFinite(shape.x) || !Number.isFinite(shape.y) ||
+            (shape.width !== undefined && (!Number.isFinite(shape.width) || shape.width < Shape.MIN_DRAG || shape.width > Shape.MAX_SIZE)) ||
+            (shape.height !== undefined && (!Number.isFinite(shape.height) || shape.height < Shape.MIN_DRAG || shape.height > Shape.MAX_SIZE)) ||
             typeof shape.text !== "string" || typeof shape.programCode !== "string"
         ) {
             throw new Error("The flowchart contains an invalid or duplicate shape.");
@@ -101,6 +105,8 @@ export function exportDiagramJson(): string {
         type: shape instanceof Decision ? "decision" : shape instanceof InputOutput ? "input-output" : shape instanceof Terminator ? "terminator" : "process",
         x: shape.posX,
         y: shape.posY,
+        width: shape.getSize().x,
+        height: shape.getSize().y,
         text: shape.content.textContent ?? "",
         programCode: shape.programCode,
         ...(shape instanceof Terminator ? { terminatorType: shape.terminatorType } : {}),
@@ -130,6 +136,9 @@ export function importDiagramJson(json: string, addShape: (shape: Shape) => Shap
             : new Process();
         shape.programCode = saved.programCode;
         shape.content.textContent = saved.text;
+        if (saved.width !== undefined && saved.height !== undefined) {
+            shape.restoreSize(saved.width, saved.height);
+        }
         shape.setCenter(saved.x + shape.getSize().x / 2, saved.y + shape.getSize().y / 2, false);
         addShape(shape);
         shapes.set(saved.id, shape);

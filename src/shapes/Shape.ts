@@ -46,6 +46,8 @@ export class Shape {
     public static simulationShape: Shape | null = null;
     public static simulationConnection: LinkRecord | null = null;
     public static showSimulationFlowline = false;
+    public static decisionBranchLabels: "yes-no" | "true-false" = "yes-no";
+    protected static branchSwitchMenu: HTMLElement | null = null;
     protected static pointer = { x: 0, y: 0 };
     protected static hover: Shape | null = null;
     protected static ghostFrozen = false;
@@ -152,6 +154,58 @@ export class Shape {
 
     public static notifyDiagramChange() {
         document.dispatchEvent(new CustomEvent("flowcraft:diagramchange"));
+    }
+
+    public static refreshConnections() {
+        Shape.renderConnections();
+    }
+
+    public static switchDecisionBranch(link: LinkRecord) {
+        const shape = link.from;
+        const previousRole = link.role;
+        const nextRole: LinkRole = previousRole === "next" ? "altNext" : "next";
+        const other = Shape.connections.find((candidate) => candidate.from === shape && candidate.role === nextRole);
+        link.role = nextRole;
+        if (other) other.role = previousRole;
+        shape.outgoingLinks = Shape.connections
+            .filter((connection) => connection.from === shape)
+            .map(({ direction, role, label, to }) => ({ direction, role, label, to }));
+        shape.syncLinkData();
+        Shape.renderConnections();
+        Shape.notifyDiagramChange();
+    }
+
+    protected static showBranchSwitchMenu(link: LinkRecord, anchor: HTMLElement) {
+        Shape.branchSwitchMenu?.remove();
+        const menu = document.createElement("div");
+        menu.className = "branch-label-menu";
+        const nextRole: LinkRole = link.role === "next" ? "altNext" : "next";
+        const option = document.createElement("button");
+        option.type = "button";
+        option.textContent = `Switch to ${link.from.getBranchLabel(nextRole)}`;
+        option.addEventListener("click", (event) => {
+            event.stopPropagation();
+            Shape.branchSwitchMenu?.remove();
+            Shape.branchSwitchMenu = null;
+            Shape.switchDecisionBranch(link);
+        });
+        menu.appendChild(option);
+        document.body.appendChild(menu);
+        Shape.branchSwitchMenu = menu;
+        const rect = anchor.getBoundingClientRect();
+        menu.style.left = `${Math.min(rect.left, window.innerWidth - menu.offsetWidth - 8)}px`;
+        menu.style.top = `${Math.min(rect.bottom + 6, window.innerHeight - menu.offsetHeight - 8)}px`;
+
+        const close = (event: PointerEvent | KeyboardEvent) => {
+            if (event instanceof KeyboardEvent && event.key !== "Escape") return;
+            if (event instanceof PointerEvent && (menu.contains(event.target as Node) || anchor.contains(event.target as Node))) return;
+            menu.remove();
+            if (Shape.branchSwitchMenu === menu) Shape.branchSwitchMenu = null;
+            document.removeEventListener("pointerdown", close);
+            document.removeEventListener("keydown", close);
+        };
+        document.addEventListener("pointerdown", close);
+        document.addEventListener("keydown", close);
     }
 
     public static clientToCanvas(clientX: number, clientY: number): Point {
@@ -283,6 +337,20 @@ export class Shape {
         const config = { ...Shape.snapConfig(), guides: false };
         this.posX = snapToGrid ? snapValue(left, [], config, 0) : left;
         this.posY = snapToGrid ? snapValue(top, [], config, 0) : top;
+        this.apply();
+    }
+
+    public restoreSize(width: number, height: number) {
+        if (!Number.isFinite(width) || !Number.isFinite(height) ||
+            width < Shape.MIN_DRAG || width > Shape.MAX_SIZE ||
+            height < Shape.MIN_DRAG || height > Shape.MAX_SIZE) {
+            throw new Error("The flowchart contains an invalid shape size.");
+        }
+        this.width = width;
+        this.height = height;
+        this.minWidth = width;
+        this.minHeight = height;
+        this.ratio = width / height;
         this.apply();
     }
 
@@ -940,14 +1008,33 @@ export class Shape {
             const mid = labelPoint(points);
             const label = document.createElement("div");
             label.className = "link-label";
-            label.setAttribute("contenteditable", String(!Shape.readOnly));
+            const branchLabel = link.from.getBranchLabel(link.role);
+            label.setAttribute("contenteditable", String(!Shape.readOnly && !branchLabel));
             label.setAttribute("spellcheck", "false");
-            label.textContent = link.label || "";
+            label.textContent = branchLabel || link.label || "";
+            if (branchLabel && !Shape.readOnly) {
+                label.setAttribute("role", "button");
+                label.setAttribute("tabindex", "0");
+                label.setAttribute("aria-label", `${branchLabel} decision branch; click to switch`);
+                label.addEventListener("click", (event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    Shape.showBranchSwitchMenu(link, label);
+                });
+                label.addEventListener("keydown", (event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        Shape.showBranchSwitchMenu(link, label);
+                    }
+                });
+            }
             label.style.left = `${mid.x}px`;
             label.style.top = `${mid.y}px`;
-            label.addEventListener("input", () => {
-                link.label = label.textContent ?? "";
-            });
+            if (!branchLabel) {
+                label.addEventListener("input", () => {
+                    link.label = label.textContent ?? "";
+                });
+            }
             label.addEventListener("keydown", (event) => {
                 if (event.key === "Enter") {
                     event.preventDefault();
@@ -1222,6 +1309,7 @@ export class Shape {
             if (!(this.shouldKeepWidthFixedOnVerticalResize() && (direction === "n" || direction === "s"))) {
                 this.fit();
             }
+            Shape.renderConnections();
         };
 
         handle.addEventListener("pointermove", onMove);

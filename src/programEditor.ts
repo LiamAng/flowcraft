@@ -1,4 +1,5 @@
 import { Decision, InputOutput, Shape } from "./shapes";
+import { settings } from "./settings";
 
 let dialog: HTMLDialogElement | null = null;
 let editor: HTMLTextAreaElement | null = null;
@@ -71,7 +72,8 @@ export function openProgramEditor(shape: Shape) {
             ? "Enter one or more variable names separated by commas, e.g. Name, LastName, PhoneNumber. Simulation asks for each value or reads it from the inputs URL parameter."
             : "Enter a JavaScript expression to display as the output.";
     } else if (shape instanceof Decision) {
-        guidance = "Enter a JavaScript expression. A truthy result follows Yes; a false result follows No.";
+        const [positive, negative] = settings.decisionBranchLabels === "true-false" ? ["True", "False"] : ["Yes", "No"];
+        guidance = `Enter a JavaScript expression. A truthy result follows ${positive}; a false result follows ${negative}.`;
     } else {
         guidance = "Enter JavaScript statements. Variables are shared with later steps; declare new variables with let or var.";
     }
