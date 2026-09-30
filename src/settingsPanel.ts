@@ -41,6 +41,32 @@ export function initSettingsPanel(): HTMLButtonElement {
     gridInput.step = "1";
     gridLabel.appendChild(gridInput);
 
+    const ratioLabel = document.createElement("label");
+    ratioLabel.textContent = "Simulation panel size (%)";
+    const ratioInput = document.createElement("input");
+    ratioInput.type = "number";
+    ratioInput.min = "15";
+    ratioInput.max = "70";
+    ratioInput.step = "1";
+    ratioLabel.appendChild(ratioInput);
+
+    const accuracyLabel = document.createElement("label");
+    accuracyLabel.textContent = "Displayed decimal places";
+    const accuracyInput = document.createElement("select");
+    [
+        "Whole numbers",
+        "Tenths",
+        "Hundredths",
+        "Thousandths",
+        ...Array.from({ length: 7 }, (_, index) => `${index + 4} decimal places`),
+    ].forEach((label, value) => {
+        const option = document.createElement("option");
+        option.value = String(value);
+        option.textContent = `${value}: ${label}`;
+        accuracyInput.appendChild(option);
+    });
+    accuracyLabel.appendChild(accuracyInput);
+
     const inputsLabel = document.createElement("label");
     inputsLabel.textContent = "Simulation inputs (JSON object)";
     const inputsArea = document.createElement("textarea");
@@ -61,7 +87,7 @@ export function initSettingsPanel(): HTMLButtonElement {
     save.textContent = "Save";
     actions.append(reset, cancel, save);
 
-    form.append(title, ...checks.map((c) => c.label), gridLabel, inputsLabel, error, actions);
+    form.append(title, ...checks.map((c) => c.label), gridLabel, ratioLabel, accuracyLabel, inputsLabel, error, actions);
     dialog.appendChild(form);
     document.body.appendChild(dialog);
 
@@ -70,6 +96,8 @@ export function initSettingsPanel(): HTMLButtonElement {
             input.checked = values[key];
         });
         gridInput.value = String(values.gridSize);
+        ratioInput.value = String(Math.round(values.simulationRatio * 100));
+        accuracyInput.value = String(values.valueAccuracy);
         inputsArea.value = JSON.stringify(values.inputs, null, 2);
         error.hidden = true;
     };
@@ -99,9 +127,17 @@ export function initSettingsPanel(): HTMLButtonElement {
             error.hidden = false;
             return;
         }
+        const simulationRatio = Number(ratioInput.value) / 100;
+        if (!Number.isFinite(simulationRatio) || simulationRatio < 0.15 || simulationRatio > 0.7) {
+            error.textContent = "Simulation panel size must be between 15% and 70%.";
+            error.hidden = false;
+            return;
+        }
         applySettings({
             ...Object.fromEntries(checks.map(({ input, key }) => [key, input.checked])),
             gridSize,
+            simulationRatio,
+            valueAccuracy: Number(accuracyInput.value),
             inputs: inputs as Record<string, unknown>,
         });
         dialog.close();

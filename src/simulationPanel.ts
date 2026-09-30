@@ -2,7 +2,7 @@ import { Simulator } from "./simulator";
 import { Decision, Shape, Terminator, InputOutput, type LinkRecord } from "./shapes";
 import { Process } from "./shapes/Process";
 import { validateFlowchart } from "./flowValidation";
-import { settings } from "./settings";
+import { applySettings, settings } from "./settings";
 
 type SimulationRow = {
     step: number;
@@ -24,13 +24,16 @@ function parseInputNames(code: string, shapeId: string): string[] {
     return names;
 }
 
-function display(value: unknown): string {
+function display(value: unknown, accuracy: number): string {
     if (value === undefined) return "";
     if (value === null) return "null";
+    if (typeof value === "number") return Number.isFinite(value) ? value.toFixed(accuracy) : String(value);
     if (typeof value === "string") return value;
     if (typeof value === "object") {
         try {
-            return JSON.stringify(value);
+            return JSON.stringify(value, (_key, item: unknown) =>
+                typeof item === "number" && Number.isFinite(item) ? Number(item.toFixed(accuracy)) : item
+            );
         } catch {
             return "[value]";
         }
@@ -110,7 +113,11 @@ function createInputDialog() {
 
 export function initSimulationPanel() {
     document.documentElement.classList.add("simulation-layout");
-
+    const splitter = document.createElement("div");
+    splitter.className = "simulation-splitter";
+    splitter.setAttribute("role", "separator");
+    splitter.setAttribute("tabindex", "0");
+    splitter.setAttribute("aria-label", "Resize simulation panel");
     const panel = document.createElement("section");
     panel.className = "simulation-panel";
     panel.setAttribute("aria-label", "Flowchart simulation");
@@ -143,6 +150,45 @@ export function initSimulationPanel() {
     tableWrapper.appendChild(table);
     panel.append(controls, tableWrapper, status);
     document.body.appendChild(panel);
+    document.body.appendChild(splitter);
+
+    const updateSplit = () => {
+        document.documentElement.style.setProperty("--simulation-width", `${settings.simulationRatio * 100}vw`);
+        document.documentElement.style.setProperty("--simulation-height", `${settings.simulationRatio * 100}vh`);
+        splitter.setAttribute("aria-valuenow", String(Math.round(settings.simulationRatio * 100)));
+        splitter.setAttribute("aria-orientation", window.matchMedia("(max-width: 760px)").matches ? "horizontal" : "vertical");
+    };
+    const resizeSplit = (event: PointerEvent) => {
+        const ratio = window.matchMedia("(max-width: 760px)").matches
+            ? (window.innerHeight - event.clientY) / window.innerHeight
+            : (window.innerWidth - event.clientX) / window.innerWidth;
+        applySettings({ simulationRatio: ratio });
+    };
+    splitter.addEventListener("pointerdown", (event) => {
+        if (event.button !== 0) return;
+        event.preventDefault();
+        splitter.setPointerCapture(event.pointerId);
+        splitter.addEventListener("pointermove", resizeSplit);
+        const stop = () => {
+            splitter.removeEventListener("pointermove", resizeSplit);
+            splitter.removeEventListener("pointerup", stop);
+            splitter.removeEventListener("pointercancel", stop);
+        };
+        splitter.addEventListener("pointerup", stop);
+        splitter.addEventListener("pointercancel", stop);
+    });
+    splitter.addEventListener("keydown", (event) => {
+        const mobile = window.matchMedia("(max-width: 760px)").matches;
+        const direction = mobile
+            ? event.key === "ArrowUp" ? 1 : event.key === "ArrowDown" ? -1 : 0
+            : event.key === "ArrowLeft" ? 1 : event.key === "ArrowRight" ? -1 : 0;
+        if (direction === 0) return;
+        event.preventDefault();
+        applySettings({ simulationRatio: settings.simulationRatio + direction * 0.02 });
+    });
+    document.addEventListener("flowcraft:settings", updateSplit);
+    window.addEventListener("resize", updateSplit);
+    updateSplit();
 
     const simulator = new Simulator();
     const requestInput = createInputDialog();
@@ -155,7 +201,12 @@ export function initSimulationPanel() {
 
     const renderTable = () => {
         table.replaceChildren();
-        const variableNames = [...new Set(rows.flatMap((row) => Object.keys(row.variables)))].sort();
+        const variableNames: string[] = [];
+        rows.forEach((row) => {
+            Object.keys(row.variables).forEach((name) => {
+                if (!variableNames.includes(name)) variableNames.push(name);
+            });
+        });
         const decisionShapes = Shape.all.filter((shape) => shape instanceof Decision);
         const head = document.createElement("thead");
         const headerRow = document.createElement("tr");
@@ -177,7 +228,7 @@ export function initSimulationPanel() {
             tr.appendChild(step);
             variableNames.forEach((name) => {
                 const cell = document.createElement("td");
-                cell.textContent = display(row.variables[name]);
+                cell.textContent = display(row.variables[name], settings.valueAccuracy);
                 cell.style.backgroundColor = columnColor(name);
                 tr.appendChild(cell);
             });
@@ -188,7 +239,7 @@ export function initSimulationPanel() {
                 tr.appendChild(cell);
             });
             const output = document.createElement("td");
-            output.textContent = display(row.output);
+            output.textContent = display(row.output, settings.valueAccuracy);
             tr.appendChild(output);
             body.appendChild(tr);
         });
@@ -328,6 +379,7 @@ export function initSimulationPanel() {
     });
     resetButton.addEventListener("click", reset);
     document.addEventListener("flowcraft:diagramchange", reset);
+    document.addEventListener("flowcraft:settings", renderTable);
 
     const autorun = () => {
         if (!settings.autorun) return;

@@ -9,6 +9,8 @@ export type Settings = {
     showSteps: boolean;
     autorun: boolean;
     inputs: Record<string, unknown>;
+    simulationRatio: number;
+    valueAccuracy: number;
 };
 
 export const defaultSettings: Settings = {
@@ -20,6 +22,8 @@ export const defaultSettings: Settings = {
     showSteps: false,
     autorun: false,
     inputs: {},
+    simulationRatio: 0.32,
+    valueAccuracy: 2,
 };
 
 export const settings: Settings = { ...defaultSettings, inputs: {} };
@@ -36,6 +40,12 @@ export function sanitizeSettings(raw: unknown): Partial<Settings> {
     }
     if (value.inputs && typeof value.inputs === "object" && !Array.isArray(value.inputs)) {
         result.inputs = { ...(value.inputs as Record<string, unknown>) };
+    }
+    if (typeof value.simulationRatio === "number" && Number.isFinite(value.simulationRatio)) {
+        result.simulationRatio = Math.max(0.15, Math.min(0.7, value.simulationRatio));
+    }
+    if (typeof value.valueAccuracy === "number" && Number.isFinite(value.valueAccuracy)) {
+        result.valueAccuracy = Math.max(0, Math.min(10, Math.round(value.valueAccuracy)));
     }
     return result;
 }

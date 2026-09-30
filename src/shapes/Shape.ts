@@ -36,6 +36,7 @@ export class Shape {
     public static readonly MAX_SIZE = 20000;
     public static pendingLink: { source: Shape; direction: LinkDirection } | null = null;
     public static connections: LinkRecord[] = [];
+    public static routedConnectionPoints: Point[][] = [];
     public static linkLayer: SVGSVGElement | null = null;
     public static labelLayer: HTMLDivElement | null = null;
     public static all: Shape[] = [];
@@ -846,6 +847,7 @@ export class Shape {
             link.entrySide = route.entry;
             return { link, points: route.points };
         });
+        Shape.routedConnectionPoints = routed.map(({ points }) => points);
 
         const jumps = findCrossingJumps(routed.map((r) => r.points));
 
@@ -960,6 +962,26 @@ export class Shape {
         if (Shape.pendingLink) {
             Shape.renderGhost();
         }
+    }
+
+    public static getDiagramBounds() {
+        const points = [
+            ...Shape.all.flatMap((shape) => {
+                const size = shape.getSize();
+                return [
+                    { x: shape.posX, y: shape.posY },
+                    { x: shape.posX + size.x, y: shape.posY + size.y },
+                ];
+            }),
+            ...Shape.routedConnectionPoints.flat(),
+        ];
+        if (points.length === 0) return null;
+        return {
+            x0: Math.min(...points.map((point) => point.x)),
+            y0: Math.min(...points.map((point) => point.y)),
+            x1: Math.max(...points.map((point) => point.x)),
+            y1: Math.max(...points.map((point) => point.y)),
+        };
     }
 
     protected static beginLineDrag(link: LinkRecord, points: Point[], seg: number, event: PointerEvent) {

@@ -142,7 +142,7 @@ initLinkPicker(chart, addShape);
 initSelection(chart);
 initTooltip();
 initFlowValidation();
+const autorun = initSimulationPanel();
 void initDiagramIO(addShape, viewport.fit).then((loaded) => {
-    const autorun = initSimulationPanel();
     if (loaded) autorun();
 });

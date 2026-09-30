@@ -1,7 +1,7 @@
 import { Shape } from "./shapes";
 import { settings } from "./settings";
 
-const MIN_ZOOM = 0.1;
+const MIN_ZOOM = 0.01;
 const MAX_ZOOM = 4;
 
 export function initViewport(chart: HTMLElement, canvas: HTMLElement) {
@@ -47,12 +47,13 @@ export function initViewport(chart: HTMLElement, canvas: HTMLElement) {
             render();
             return;
         }
-        const x0 = Math.min(...Shape.all.map((s) => s.posX));
-        const y0 = Math.min(...Shape.all.map((s) => s.posY));
-        const x1 = Math.max(...Shape.all.map((s) => s.posX + s.getSize().x));
-        const y1 = Math.max(...Shape.all.map((s) => s.posY + s.getSize().y));
+        const bounds = Shape.getDiagramBounds();
+        if (!bounds) return;
+        const { x0, y0, x1, y1 } = bounds;
         const pad = 60;
-        const zoom = Math.max(MIN_ZOOM, Math.min(1, (rect.width - pad * 2) / (x1 - x0), (rect.height - pad * 2) / (y1 - y0)));
+        const width = Math.max(1, x1 - x0);
+        const height = Math.max(1, y1 - y0);
+        const zoom = Math.max(MIN_ZOOM, Math.min(1, (rect.width - pad * 2) / width, (rect.height - pad * 2) / height));
         Shape.zoom = zoom;
         Shape.panX = rect.width / 2 - ((x0 + x1) / 2) * zoom;
         Shape.panY = rect.height / 2 - ((y0 + y1) / 2) * zoom;
