@@ -2,6 +2,7 @@ import { Simulator } from "./simulator";
 import { Decision, Shape, Terminator, InputOutput, type LinkRecord } from "./shapes";
 import { Process } from "./shapes/Process";
 import { validateFlowchart } from "./flowValidation";
+import { settings } from "./settings";
 
 type SimulationRow = {
     step: number;
@@ -107,19 +108,7 @@ function createInputDialog() {
     return request;
 }
 
-function readUrlInputs(): Record<string, unknown> {
-    const raw = new URLSearchParams(window.location.search).get("inputs");
-    if (!raw) return {};
-    const values: unknown = JSON.parse(raw);
-    if (!values || typeof values !== "object" || Array.isArray(values)) {
-        throw new Error("The inputs query must be a JSON object, such as ?inputs=%7B%22count%22%3A3%7D.");
-    }
-    return values as Record<string, unknown>;
-}
-
 export function initSimulationPanel() {
-    const params = new URLSearchParams(window.location.search);
-    Shape.showSimulationFlowline = params.has("showSteps") && params.get("showSteps") !== "false";
     document.documentElement.classList.add("simulation-layout");
 
     const panel = document.createElement("section");
@@ -163,14 +152,6 @@ export function initSimulationPanel() {
     let rows: SimulationRow[] = [];
     let conditions: Record<string, boolean> = {};
     let running = false;
-    let inputValues: Record<string, unknown> = {};
-    let inputConfigError: unknown = null;
-    try {
-        inputValues = readUrlInputs();
-    } catch (error) {
-        inputConfigError = error;
-    }
-    const automatic = params.has("autorun") && params.get("autorun") !== "false";
 
     const renderTable = () => {
         table.replaceChildren();
@@ -255,6 +236,7 @@ export function initSimulationPanel() {
         let condition: boolean | undefined;
         if (shape instanceof InputOutput && shape.inputOutputType === "input") {
             const names = parseInputNames(shape.programCode, shape.id);
+            const inputValues = settings.inputs;
             const missingNames = names.filter((name) => !Object.prototype.hasOwnProperty.call(inputValues, name));
             let enteredValues: Record<string, unknown> = {};
             if (missingNames.length > 0) {
@@ -348,13 +330,13 @@ export function initSimulationPanel() {
     document.addEventListener("flowcraft:diagramchange", reset);
 
     const autorun = () => {
-        if (!automatic) return;
+        if (!settings.autorun) return;
         try {
-            if (inputConfigError) throw inputConfigError;
+            const inputValues = settings.inputs;
             const inputs = Shape.all.filter((shape) => shape instanceof InputOutput && shape.inputOutputType === "input");
             const missing = inputs.flatMap((shape) => parseInputNames(shape.programCode, shape.id).filter((name) => !Object.prototype.hasOwnProperty.call(inputValues, name)));
             if (missing.length > 0) {
-                throw new Error(`Autorun requires URL inputs for: ${[...new Set(missing)].join(", ")}.`);
+                throw new Error(`Autorun requires simulation inputs in settings for: ${[...new Set(missing)].join(", ")}.`);
             }
             runButton.click();
         } catch (error) {

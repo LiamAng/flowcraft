@@ -1,7 +1,8 @@
 import { downloadDiagram, importDiagramJson } from "./diagramFile";
 import { Shape } from "./shapes";
+import { initSettingsPanel } from "./settingsPanel";
 
-export async function initDiagramIO(addShape: (shape: Shape) => Shape): Promise<boolean> {
+export async function initDiagramIO(addShape: (shape: Shape) => Shape, fitView: () => void): Promise<boolean> {
     const tools = document.createElement("div");
     tools.className = "diagram-file-tools";
 
@@ -16,47 +17,50 @@ export async function initDiagramIO(addShape: (shape: Shape) => Shape): Promise<
         status.hidden = false;
     };
 
-    if (Shape.readOnly) {
-        const badge = document.createElement("span");
-        badge.className = "readonly-badge";
-        badge.textContent = "Read only";
-        tools.appendChild(badge);
-    } else {
-        const exportButton = document.createElement("button");
-        exportButton.type = "button";
-        exportButton.textContent = "Export";
-        exportButton.addEventListener("click", downloadDiagram);
+    const badge = document.createElement("span");
+    badge.className = "readonly-badge";
+    badge.textContent = "Read only";
 
-        const importButton = document.createElement("button");
-        importButton.type = "button";
-        importButton.textContent = "Import";
+    const settingsButton = initSettingsPanel();
 
-        const fileInput = document.createElement("input");
-        fileInput.type = "file";
-        fileInput.accept = ".json,application/json";
-        fileInput.hidden = true;
-        fileInput.addEventListener("change", async () => {
-            const file = fileInput.files?.[0];
-            fileInput.value = "";
-            if (!file) {
-                return;
-            }
-            try {
-                importDiagramJson(await file.text(), addShape);
-                status.hidden = true;
-            } catch (error) {
-                report(error instanceof Error ? error.message : "Could not import the flowchart file.", true);
-            }
-        });
-        importButton.addEventListener("click", () => fileInput.click());
-        tools.append(exportButton, importButton, fileInput);
-    }
+    const exportButton = document.createElement("button");
+    exportButton.type = "button";
+    exportButton.textContent = "Export";
+    exportButton.addEventListener("click", downloadDiagram);
+
+    const importButton = document.createElement("button");
+    importButton.type = "button";
+    importButton.textContent = "Import";
+
+    const fileInput = document.createElement("input");
+    fileInput.type = "file";
+    fileInput.accept = ".json,application/json";
+    fileInput.hidden = true;
+    fileInput.addEventListener("change", async () => {
+        const file = fileInput.files?.[0];
+        fileInput.value = "";
+        if (!file) {
+            return;
+        }
+        try {
+            importDiagramJson(await file.text(), addShape);
+            fitView();
+            status.hidden = true;
+        } catch (error) {
+            report(error instanceof Error ? error.message : "Could not import the flowchart file.", true);
+        }
+    });
+    importButton.addEventListener("click", () => fileInput.click());
+    tools.append(badge, settingsButton, exportButton, importButton, fileInput);
 
     tools.appendChild(status);
     document.body.appendChild(tools);
 
     const url = new URLSearchParams(window.location.search).get("url");
-    if (!url) return true;
+    if (!url) {
+        fitView();
+        return true;
+    }
 
     try {
         const source = new URL(url, window.location.href);
@@ -69,6 +73,7 @@ export async function initDiagramIO(addShape: (shape: Shape) => Shape): Promise<
             throw new Error(`Could not load flowchart (${response.status} ${response.statusText}).`);
         }
         importDiagramJson(await response.text(), addShape);
+        fitView();
         status.hidden = true;
         return true;
     } catch (error) {

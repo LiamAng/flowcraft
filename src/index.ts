@@ -7,6 +7,8 @@ import { initTooltip } from "./tooltip";
 import { initFlowValidation } from "./flowValidation";
 import { initDiagramIO } from "./diagramIO";
 import { initSimulationPanel } from "./simulationPanel";
+import { initViewport } from "./viewport";
+import { applySettings, settings } from "./settings";
 
 export const chart: HTMLElement = document.querySelector('.chart') as HTMLElement;
 const canvas = document.createElement("div");
@@ -14,8 +16,8 @@ canvas.className = "chart-world";
 chart.appendChild(canvas);
 Shape.canvas = canvas;
 const palette = document.getElementById('shape-palette') as HTMLDivElement;
-Shape.readOnly = new URLSearchParams(window.location.search).has("readonly");
-document.documentElement.classList.toggle("read-only", Shape.readOnly);
+
+applySettings(settings);
 
 const factoryMap = {
     process: () => new Process(),
@@ -134,55 +136,13 @@ function renderPalette() {
     active?.classList.add('active');
 }
 
-const zoomControls = document.createElement("div");
-zoomControls.className = "canvas-zoom";
-zoomControls.setAttribute("aria-label", "Canvas zoom");
-const zoomLabel = document.createElement("span");
-zoomLabel.className = "canvas-zoom-level";
-const updateZoomLabel = () => {
-    zoomLabel.textContent = `${Math.round(Shape.zoom * 100)}%`;
-};
-updateZoomLabel();
-[
-    { label: "−", title: "Zoom out", amount: -0.1 },
-    { label: "+", title: "Zoom in", amount: 0.1 },
-].forEach(({ label, title, amount }) => {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.textContent = label;
-    button.title = title;
-    button.setAttribute("aria-label", title);
-    button.addEventListener("click", () => {
-        Shape.setZoom(Shape.zoom + amount);
-        updateZoomLabel();
-    });
-    zoomControls.appendChild(button);
-});
-const resetZoom = document.createElement("button");
-resetZoom.type = "button";
-resetZoom.textContent = "Reset";
-resetZoom.title = "Reset zoom";
-resetZoom.addEventListener("click", () => {
-    Shape.setZoom(1);
-    updateZoomLabel();
-});
-zoomControls.append(resetZoom, zoomLabel);
-document.body.appendChild(zoomControls);
-chart.addEventListener("wheel", (event: WheelEvent) => {
-    if (!event.ctrlKey && !event.metaKey) return;
-    event.preventDefault();
-    Shape.setZoom(Shape.zoom + (event.deltaY < 0 ? 0.1 : -0.1));
-    updateZoomLabel();
-}, { passive: false });
-
-if (!Shape.readOnly) {
-    renderPalette();
-    initLinkPicker(chart, addShape);
-    initSelection(chart);
-}
+const viewport = initViewport(chart, canvas);
+renderPalette();
+initLinkPicker(chart, addShape);
+initSelection(chart);
 initTooltip();
 initFlowValidation();
-void initDiagramIO(addShape).then((loaded) => {
+void initDiagramIO(addShape, viewport.fit).then((loaded) => {
     const autorun = initSimulationPanel();
     if (loaded) autorun();
 });

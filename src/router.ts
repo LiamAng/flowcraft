@@ -233,18 +233,14 @@ export class Router {
 
         const costH = new Float32Array(nx * ny);
         const costV = new Float32Array(nx * ny);
-        const outOfCanvas = (a: number, b: number, limit: number) => a < 0 || b < 0 || a > limit || b > limit;
-
         for (let iy = 0; iy < ny; iy++) {
             for (let ix = 0; ix < nx - 1; ix++) {
-                const bad = outOfCanvas(xs[ix], xs[ix + 1], bounds.width) || outOfCanvas(ys[iy], ys[iy], bounds.height);
-                costH[iy * nx + ix] = (xs[ix + 1] - xs[ix]) * (bad ? cfg.outside : 1);
+                costH[iy * nx + ix] = xs[ix + 1] - xs[ix];
             }
         }
         for (let iy = 0; iy < ny - 1; iy++) {
             for (let ix = 0; ix < nx; ix++) {
-                const bad = outOfCanvas(xs[ix], xs[ix], bounds.width) || outOfCanvas(ys[iy], ys[iy + 1], bounds.height);
-                costV[iy * nx + ix] = (ys[iy + 1] - ys[iy]) * (bad ? cfg.outside : 1);
+                costV[iy * nx + ix] = ys[iy + 1] - ys[iy];
             }
         }
 

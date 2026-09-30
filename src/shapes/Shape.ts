@@ -1,5 +1,6 @@
 import { Router, roundedPath, labelPoint, findCrossingJumps, type Side, type Point, type RouteTarget, type RouteObstacle } from "../router";
 import { openProgramEditor } from "../programEditor";
+import { snapRect, snapValue, edgeCandidates, alignmentGuides, type Rect, type Guide, type SnapConfig } from "../snapping";
 
 export type ResizeDirection = "n" | "s" | "e" | "w" | "ne" | "nw" | "se" | "sw";
 export type LinkDirection = "n" | "s" | "e" | "w";
@@ -23,7 +24,13 @@ export type LinkRecord = {
 export class Shape {
     public static canvas: HTMLElement | null = null;
     public static zoom = 1;
-    public static readonly GRID_SIZE = 40;
+    public static panX = 0;
+    public static panY = 0;
+    public static gridSize = 40;
+    public static snapEnabled = true;
+    public static guidesEnabled = true;
+    public static readonly SNAP_DISTANCE = 8;
+    public static guideLayer: SVGSVGElement | null = null;
     public static readOnly = false;
     public static readonly MIN_DRAG = 20;
     public static readonly MAX_SIZE = 20000;
@@ -146,21 +153,54 @@ export class Shape {
         document.dispatchEvent(new CustomEvent("flowcraft:diagramchange"));
     }
 
-    public static setZoom(zoom: number) {
-        Shape.zoom = Math.max(0.5, Math.min(zoom, 2));
-        if (Shape.canvas) {
-            Shape.canvas.style.transform = `scale(${Shape.zoom})`;
-        }
-    }
-
     public static clientToCanvas(clientX: number, clientY: number): Point {
-        const bounds = Shape.canvas?.getBoundingClientRect();
+        const bounds = document.querySelector(".chart")?.getBoundingClientRect();
         if (!bounds) return { x: clientX, y: clientY };
-        return { x: (clientX - bounds.left) / Shape.zoom, y: (clientY - bounds.top) / Shape.zoom };
+        return { x: (clientX - bounds.left - Shape.panX) / Shape.zoom, y: (clientY - bounds.top - Shape.panY) / Shape.zoom };
     }
 
-    protected static snap(value: number): number {
-        return Math.round(value / Shape.GRID_SIZE) * Shape.GRID_SIZE;
+    protected static snapConfig(): SnapConfig {
+        return { grid: Shape.gridSize, snap: Shape.snapEnabled, guides: Shape.guidesEnabled };
+    }
+
+    protected static snapThreshold(): number {
+        return Shape.SNAP_DISTANCE / Shape.zoom;
+    }
+
+    protected static rectOf(shape: Shape): Rect {
+        return { x: shape.posX, y: shape.posY, w: shape.width, h: shape.height };
+    }
+
+    protected static othersRects(exclude: Iterable<Shape>): Rect[] {
+        const skip = new Set(exclude);
+        return Shape.all.filter((shape) => !skip.has(shape)).map(Shape.rectOf);
+    }
+
+    protected static renderGuides(guides: Guide[]) {
+        const layer = Shape.guideLayer;
+        if (!layer) return;
+        layer.replaceChildren();
+        const ns = "http://www.w3.org/2000/svg";
+        guides.forEach((guide) => {
+            const line = document.createElementNS(ns, "line");
+            const vertical = guide.axis === "x";
+            line.setAttribute("x1", `${vertical ? guide.pos : guide.from}`);
+            line.setAttribute("x2", `${vertical ? guide.pos : guide.to}`);
+            line.setAttribute("y1", `${vertical ? guide.from : guide.pos}`);
+            line.setAttribute("y2", `${vertical ? guide.to : guide.pos}`);
+            line.setAttribute("stroke", "#ec4899");
+            line.setAttribute("stroke-width", `${1 / Shape.zoom}`);
+            line.setAttribute("stroke-dasharray", `${5 / Shape.zoom} ${4 / Shape.zoom}`);
+            layer.appendChild(line);
+        });
+    }
+
+    protected static showAlignment(rect: Rect, exclude: Iterable<Shape>) {
+        Shape.renderGuides(Shape.guidesEnabled ? alignmentGuides(rect, Shape.othersRects(exclude)) : []);
+    }
+
+    public static clearGuides() {
+        Shape.guideLayer?.replaceChildren();
     }
 
     public static setSimulationFocus(shape: Shape | null, connection: LinkRecord | null = null) {
@@ -239,20 +279,13 @@ export class Shape {
     setCenter(x: number, y: number, snapToGrid = true) {
         const left = x - this.width / 2;
         const top = y - this.height / 2;
-        this.posX = snapToGrid ? Shape.snap(left) : left;
-        this.posY = snapToGrid ? Shape.snap(top) : top;
+        const config = { ...Shape.snapConfig(), guides: false };
+        this.posX = snapToGrid ? snapValue(left, [], config, 0) : left;
+        this.posY = snapToGrid ? snapValue(top, [], config, 0) : top;
         this.apply();
     }
 
     protected apply() {
-        const chart = document.querySelector(".chart") as HTMLElement | null;
-        const bounds = chart ?? document.body;
-
-        const maxX = bounds.clientWidth - this.width;
-        const maxY = bounds.clientHeight - this.height;
-        this.posX = Math.max(0, Math.min(this.posX, maxX));
-        this.posY = Math.max(0, Math.min(this.posY, maxY));
-
         this.element.style.left = `${this.posX}px`;
         this.element.style.top = `${this.posY}px`;
         this.element.style.width = `${this.width}px`;
@@ -282,12 +315,6 @@ export class Shape {
         this.content.style.paddingBottom = previousPaddingBottom;
 
         return needed;
-    }
-
-    protected clampPosition(value: number, size: number): number {
-        const chart = document.querySelector(".chart") as HTMLElement | null;
-        const bounds = chart ?? document.body;
-        return Math.max(0, Math.min(value, bounds.clientWidth - size));
     }
 
     protected updateResizeHandles() {
@@ -552,9 +579,7 @@ export class Shape {
             target = { shape: h, anchors: Shape.buildTargetAnchors(h) };
             avoid = Shape.reservedSidesFor(h);
         } else if (Shape.ghostFrozen) {
-            const cx = Math.max(size / 2, Math.min(p.x, bounds.width - size / 2));
-            const cy = Math.max(size / 2, Math.min(p.y, bounds.height - size / 2));
-            const rect = { x: cx - size / 2, y: cy - size / 2, w: size, h: size };
+            const rect = { x: p.x - size / 2, y: p.y - size / 2, w: size, h: size };
             obstacles.push({ shape: Shape.ghostTarget, rect });
             target = { shape: Shape.ghostTarget, anchors: rectAnchors(rect) };
 
@@ -738,6 +763,17 @@ export class Shape {
             svg.style.pointerEvents = "none";
             svg.style.overflow = "visible";
             Shape.ghostLayer = svg;
+            (Shape.canvas ?? chart).appendChild(svg);
+        }
+
+        if (!Shape.guideLayer) {
+            const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+            svg.setAttribute("class", "guide-layer");
+            svg.style.position = "absolute";
+            svg.style.inset = "0";
+            svg.style.pointerEvents = "none";
+            svg.style.overflow = "visible";
+            Shape.guideLayer = svg;
             (Shape.canvas ?? chart).appendChild(svg);
         }
     }
@@ -1105,20 +1141,24 @@ export class Shape {
             const dx = current.x - start.x;
             const dy = current.y - start.y;
 
+            const others = Shape.othersRects([this]);
+            const config = Shape.snapConfig();
+            const threshold = Shape.snapThreshold();
+            const edge = (axis: "x" | "y", value: number) => snapValue(value, edgeCandidates(axis, others), config, threshold);
             let nextWidth = startWidth;
             let nextHeight = startHeight;
             const isVerticalOnly = direction === "n" || direction === "s";
 
             if (direction.includes("e")) {
-                nextWidth = Math.max(Shape.MIN_DRAG, startWidth + dx);
+                nextWidth = Math.max(Shape.MIN_DRAG, edge("x", startLeft + startWidth + dx) - startLeft);
             } else if (direction.includes("w")) {
-                nextWidth = Math.max(Shape.MIN_DRAG, startWidth - dx);
+                nextWidth = Math.max(Shape.MIN_DRAG, startLeft + startWidth - edge("x", startLeft + dx));
             }
 
             if (direction.includes("s")) {
-                nextHeight = Math.max(Shape.MIN_DRAG, startHeight + dy);
+                nextHeight = Math.max(Shape.MIN_DRAG, edge("y", startTop + startHeight + dy) - startTop);
             } else if (direction.includes("n")) {
-                nextHeight = Math.max(Shape.MIN_DRAG, startHeight - dy);
+                nextHeight = Math.max(Shape.MIN_DRAG, startTop + startHeight - edge("y", startTop + dy));
             }
 
             if (this.shouldKeepWidthFixedOnVerticalResize() && isVerticalOnly) {
@@ -1143,6 +1183,7 @@ export class Shape {
             }
 
             this.apply();
+            Shape.showAlignment(Shape.rectOf(this), [this]);
         };
 
         const onUp = () => {
@@ -1150,6 +1191,7 @@ export class Shape {
             handle.removeEventListener("pointerup", onUp);
             handle.removeEventListener("pointercancel", onUp);
             this.element.classList.remove("dragging");
+            Shape.clearGuides();
 
             this.minWidth = this.width;
             this.minHeight = this.height;
@@ -1219,16 +1261,23 @@ export class Shape {
 
         const group = Shape.groupDrag;
         if (group && group.leader === this) {
-            const chart = document.querySelector(".chart") as HTMLElement | null;
-            const bounds = chart ?? document.body;
             const point = Shape.clientToCanvas(event.clientX, event.clientY);
-            let dx = Shape.snap(point.x - group.startX);
-            let dy = Shape.snap(point.y - group.startY);
+            let dx = point.x - group.startX;
+            let dy = point.y - group.startY;
 
-            group.origins.forEach((origin, shape) => {
-                dx = Math.max(-origin.x, Math.min(dx, bounds.clientWidth - shape.width - origin.x));
-                dy = Math.max(-origin.y, Math.min(dy, bounds.clientHeight - shape.height - origin.y));
-            });
+            const members = [...group.origins.keys()];
+            const x0 = Math.min(...members.map((shape) => group.origins.get(shape)!.x));
+            const y0 = Math.min(...members.map((shape) => group.origins.get(shape)!.y));
+            const x1 = Math.max(...members.map((shape) => group.origins.get(shape)!.x + shape.width));
+            const y1 = Math.max(...members.map((shape) => group.origins.get(shape)!.y + shape.height));
+            const leaderOrigin = group.origins.get(this)!;
+            const config = Shape.snapConfig();
+            const box: Rect = { x: x0 + dx, y: y0 + dy, w: x1 - x0, h: y1 - y0 };
+            const aligned = snapRect(box, Shape.othersRects(members), { ...config, snap: false }, Shape.snapThreshold());
+            const gridX = snapValue(leaderOrigin.x + dx, [], { ...config, guides: false }, 0) - leaderOrigin.x - dx;
+            const gridY = snapValue(leaderOrigin.y + dy, [], { ...config, guides: false }, 0) - leaderOrigin.y - dy;
+            dx += aligned.dx !== 0 ? aligned.dx : gridX;
+            dy += aligned.dy !== 0 ? aligned.dy : gridY;
 
             Shape.renderSuspended = true;
             group.origins.forEach((origin, shape) => {
@@ -1238,19 +1287,26 @@ export class Shape {
             });
             Shape.renderSuspended = false;
             Shape.renderConnections();
+            Shape.showAlignment({ x: x0 + dx, y: y0 + dy, w: x1 - x0, h: y1 - y0 }, members);
             this.element.style.cursor = "grabbing";
             return;
         }
 
         const size = this.getSize();
         const point = Shape.clientToCanvas(event.clientX, event.clientY);
-        this.posX = this.clampPosition(Shape.snap(point.x - this.dragOffsetX), size.x);
-        this.posY = this.clampPosition(Shape.snap(point.y - this.dragOffsetY), size.y);
+        const raw: Rect = { x: point.x - this.dragOffsetX, y: point.y - this.dragOffsetY, w: size.x, h: size.y };
+        const delta = snapRect(raw, Shape.othersRects([this]), Shape.snapConfig(), Shape.snapThreshold());
+        this.posX = raw.x + delta.dx;
+        this.posY = raw.y + delta.dy;
         this.apply();
+        Shape.showAlignment(Shape.rectOf(this), [this]);
         this.element.style.cursor = "grabbing";
     }
 
     onMouseUp() {
+        if (this.isDragging) {
+            Shape.clearGuides();
+        }
         if (Shape.groupDrag?.leader === this) {
             Shape.groupDrag = null;
         }
@@ -1370,10 +1426,6 @@ export class Shape {
         this.width = this.minWidth;
         this.height = this.minHeight;
 
-        const chart = document.querySelector(".chart") as HTMLElement | null;
-        const bounds = chart ?? document.body;
-        this.posX = (bounds.clientWidth - this.width) / 2;
-        this.posY = (bounds.clientHeight - this.height) / 2;
         this.apply();
 
         this.content.addEventListener("input", () => {

@@ -14,15 +14,30 @@
             width: 100vw;
             height: 100vh;
             overflow: hidden;
+            touch-action: none;
+        }
+
+        .chart.pan-ready,
+        .chart.pan-ready .shape {
+            cursor: grab;
+        }
+
+        .chart.panning,
+        .chart.panning .shape {
+            cursor: grabbing;
+        }
+
+        .read-only .chart {
+            cursor: grab;
         }
 
         .chart-world {
             position: absolute;
-            inset: 0;
-            transform: scale(1);
-            transform-origin: center;
-            background-size: 40px 40px;
-            background-image: radial-gradient(circle, #000000 1px, rgba(0, 0, 0, 0) 1px);
+            left: 0;
+            top: 0;
+            width: 0;
+            height: 0;
+            transform-origin: 0 0;
         }
 
         .canvas-zoom {
@@ -203,7 +218,49 @@
         }
 
         .readonly-badge {
+            display: none;
             color: #475569;
+        }
+
+        .read-only .readonly-badge {
+            display: inline-block;
+        }
+
+        .read-only .diagram-file-tools > button {
+            display: none;
+        }
+
+        .settings-dialog form {
+            width: auto;
+        }
+
+        .settings-check {
+            display: flex !important;
+            align-items: center;
+            gap: 8px;
+            font-weight: 400;
+        }
+
+        .settings-dialog input[type="number"] {
+            padding: 8px 10px;
+            border: 1px solid #cbd5e1;
+            border-radius: 8px;
+            font: 13px system-ui, sans-serif;
+            user-select: text;
+        }
+
+        .settings-dialog .settings-inputs {
+            min-height: 90px;
+        }
+
+        .settings-error {
+            margin: 0;
+            color: #b91c1c;
+            font: 13px system-ui, sans-serif;
+        }
+
+        .settings-error[hidden] {
+            display: none;
         }
 
         .diagram-file-status {

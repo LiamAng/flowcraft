@@ -20,7 +20,7 @@ export function initSelection(chart: HTMLElement) {
 
     chart.addEventListener("pointerdown", (event: PointerEvent) => {
 
-        if (event.button !== 0 || !(event.target === chart || event.target === Shape.canvas) || Shape.pendingLink) {
+        if (event.button !== 0 || Shape.readOnly || !(event.target === chart || event.target === Shape.canvas) || Shape.pendingLink) {
             return;
         }
         event.preventDefault();

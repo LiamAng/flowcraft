@@ -1,3 +1,4 @@
+import { applySettings, defaultSettings, sanitizeSettings, snapshotSettings, type Settings } from "./settings";
 import { Decision, InputOutput, Process, Shape, Terminator, type LinkDirection, type LinkRecord, type LinkRole, type Waypoint } from "./shapes";
 
 type ShapeType = "process" | "decision" | "input-output" | "terminator";
@@ -24,6 +25,7 @@ type SavedConnection = {
 
 type DiagramFile = {
     version: 1;
+    settings: Partial<Settings>;
     shapes: SavedShape[];
     connections: SavedConnection[];
 };
@@ -89,7 +91,7 @@ function parseDiagram(json: string): DiagramFile {
         return link;
     });
 
-    return { version: 1, shapes, connections };
+    return { version: 1, settings: sanitizeSettings(candidate.settings), shapes, connections };
 }
 
 export function exportDiagramJson(): string {
@@ -112,12 +114,13 @@ export function exportDiagramJson(): string {
         label: link.label,
         ...(link.waypoints ? { waypoints: link.waypoints.map((point) => ({ ...point })) } : {}),
     }));
-    return JSON.stringify({ version: 1, shapes, connections }, null, 2);
+    return JSON.stringify({ version: 1, settings: snapshotSettings(), shapes, connections }, null, 2);
 }
 
 export function importDiagramJson(json: string, addShape: (shape: Shape) => Shape) {
     const diagram = parseDiagram(json);
     Shape.removeShapes([...Shape.all]);
+    applySettings({ ...defaultSettings, inputs: {}, ...diagram.settings });
 
     const shapes = new Map<string, Shape>();
     diagram.shapes.forEach((saved) => {
