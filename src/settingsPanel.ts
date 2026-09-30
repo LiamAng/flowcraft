@@ -43,7 +43,7 @@ export function initSettingsPanel(fileActions: { exportDiagram: () => void; impo
     error.className = "settings-error";
     error.hidden = true;
 
-    const checkbox = (key: "snap" | "guides" | "showGrid" | "readOnly" | "showSteps" | "showStepNumbers" | "showProcessContentInSteps" | "compressSimulationTable" | "autorun", text: string) => {
+    const checkbox = (key: "snap" | "guides" | "showGrid" | "readOnly" | "showSteps" | "showStepNumbers" | "showShapeContentInSteps" | "compressSimulationTable" | "collapseConsecutiveConditions" | "collapseOtherSteps" | "autorun", text: string) => {
         const label = document.createElement("label");
         label.className = "settings-check";
         const input = document.createElement("input");
@@ -58,8 +58,10 @@ export function initSettingsPanel(fileActions: { exportDiagram: () => void; impo
         checkbox("showGrid", "Show grid"),
         checkbox("showSteps", "Highlight the active flowline during simulation"),
         checkbox("showStepNumbers", "Show step numbers in simulation"),
-        checkbox("showProcessContentInSteps", "Show process content in the simulation step column"),
+        checkbox("showShapeContentInSteps", "Show shape content instead of step numbers"),
         checkbox("compressSimulationTable", "Compress unchanged simulation steps"),
+        checkbox("collapseConsecutiveConditions", "Collapse consecutive conditions into one row"),
+        checkbox("collapseOtherSteps", "Collapse consecutive input/output steps into one row"),
         checkbox("autorun", "Run simulation automatically on load"),
         checkbox("readOnly", "Read only"),
     ];

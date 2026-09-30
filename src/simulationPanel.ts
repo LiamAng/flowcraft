@@ -6,10 +6,12 @@ import { applySettings, settings } from "./settings";
 
 type SimulationRow = {
     step: number;
+    stepEnd: number;
     shape: Shape;
     variables: Record<string, unknown>;
-    conditions: Record<string, boolean>;
+    conditions: Record<string, boolean[]>;
     output: unknown;
+    outputs: unknown[];
 };
 
 const MAX_STEPS = 10000;
@@ -313,6 +315,9 @@ export function initSimulationPanel() {
     let running = false;
     let executedSteps = 0;
     let inputIndexes: Record<string, number> = {};
+    let lastStepWasDecision = false;
+    let lastStepWasOther = false;
+    let lastOtherRowIndex: number | null = null;
 
     const renderTable = () => {
         table.replaceChildren();
@@ -323,9 +328,10 @@ export function initSimulationPanel() {
             });
         });
         const decisionShapes = Shape.all.filter((shape) => shape instanceof Decision);
+        const showOutputColumn = !(current === null && wholeOutput.length === 1);
         const head = document.createElement("thead");
         const headerRow = document.createElement("tr");
-        [ ...(settings.showStepNumbers ? ["Step"] : []), ...variableNames, ...decisionShapes.map((shape) => `Condition: ${shape.content.textContent?.trim() || shape.id}`), "Output"].forEach((title, index, all) => {
+        [ ...(settings.showStepNumbers ? ["Step"] : []), ...variableNames, ...decisionShapes.map((shape) => `Condition: ${shape.content.textContent?.trim() || shape.id}`), ...(showOutputColumn ? ["Output"] : [])].forEach((title, index, all) => {
             const cell = document.createElement("th");
             cell.textContent = title;
             if (index > 0 && index < all.length - 1) cell.style.backgroundColor = columnColor(title);
@@ -340,9 +346,15 @@ export function initSimulationPanel() {
             if (settings.showStepNumbers) {
                 const step = document.createElement("th");
                 step.scope = "row";
-                step.textContent = settings.showProcessContentInSteps && row.shape instanceof Process
-                    ? row.shape.content.innerText.trim() || String(row.step)
-                    : String(row.step);
+                const stepRange = row.step === row.stepEnd ? String(row.step) : `${row.step}-${row.stepEnd}`;
+                const stepLabel = row.shape instanceof Decision
+                    ? "Condition"
+                    : row.shape instanceof Initialization
+                        ? "Initialization"
+                    : settings.showShapeContentInSteps
+                        ? row.shape.content.innerText.trim() || stepRange
+                        : stepRange;
+                step.textContent = stepLabel;
                 tr.appendChild(step);
             }
             variableNames.forEach((name) => {
@@ -353,14 +365,17 @@ export function initSimulationPanel() {
             });
             decisionShapes.forEach((shape) => {
                 const cell = document.createElement("td");
-                const condition = row.conditions[shape.id];
-                cell.textContent = condition === undefined ? "" : condition ? "true" : "false";
+                const conditions = row.conditions[shape.id];
+                cell.textContent = conditions?.map((condition) => condition ? "true" : "false").join(" → ") ?? "";
                 cell.style.backgroundColor = columnColor(`condition:${shape.id}`);
                 tr.appendChild(cell);
             });
-            const output = document.createElement("td");
-            output.textContent = display(row.output, settings.valueAccuracy);
-            tr.appendChild(output);
+            if (showOutputColumn) {
+                const output = document.createElement("td");
+                output.textContent = row.outputs.map((value) => display(value, settings.valueAccuracy)).join(" → ") ||
+                    display(row.output, settings.valueAccuracy);
+                tr.appendChild(output);
+            }
             body.appendChild(tr);
         });
         table.appendChild(body);
@@ -401,6 +416,9 @@ export function initSimulationPanel() {
         rows = [];
         executedSteps = 0;
         inputIndexes = {};
+        lastStepWasDecision = false;
+        lastStepWasOther = false;
+        lastOtherRowIndex = null;
         wholeOutputPanel.hidden = true;
         runtime.reset();
         renderTable();
@@ -425,10 +443,12 @@ export function initSimulationPanel() {
             const inputValues = settings.inputs;
             const configuredValues = new Map<string, unknown>();
             const missingVariables = variables.filter(({ name }) => {
-                const values = inputSequence(inputValues[name]);
+                const configuredValue = inputValues[name];
+                const values = Array.isArray(configuredValue) ? configuredValue : null;
                 const index = inputIndexes[name] ?? 0;
-                if (usePredefinedInputs && index < values.length) {
-                    configuredValues.set(name, values[index]);
+                if (usePredefinedInputs && Object.prototype.hasOwnProperty.call(inputValues, name) &&
+                    (values === null || index < values.length)) {
+                    configuredValues.set(name, values === null ? configuredValue : values[index]);
                     return false;
                 }
                 return true;
@@ -446,7 +466,9 @@ export function initSimulationPanel() {
             variables.forEach(({ name, type }) => {
                 const value = configuredValues.has(name) ? configuredValues.get(name) : enteredValues[name];
                 runtime.getScope()[name] = type === "number" ? Number(value) : String(value);
-                if (configuredValues.has(name)) inputIndexes[name] = (inputIndexes[name] ?? 0) + 1;
+                if (configuredValues.has(name) && Array.isArray(inputValues[name])) {
+                    inputIndexes[name] = (inputIndexes[name] ?? 0) + 1;
+                }
             });
         } else if (shape instanceof Decision) {
             if (!shape.programCode.trim()) throw new Error(`Enter a true/false expression in Decision ${shape.id}'s code.`);
@@ -476,18 +498,46 @@ export function initSimulationPanel() {
         if (!(shape instanceof Terminator)) {
             const nextRow: SimulationRow = {
                 step: stepNumber,
+                stepEnd: stepNumber,
                 shape,
                 variables: { ...runtime.getScope() },
-                conditions: shape instanceof Decision && condition !== undefined ? { [shape.id]: condition } : {},
+                conditions: shape instanceof Decision && condition !== undefined ? { [shape.id]: [condition] } : {},
                 output: shape instanceof InputOutput && shape.inputOutputType === "output" ? lastOutput : "",
+                outputs: shape instanceof InputOutput && shape.inputOutputType === "output" ? [lastOutput] : [],
             };
             const previousRow = rows[rows.length - 1];
-            const unchanged = previousRow &&
-                recordsEqual(previousRow.variables, nextRow.variables) &&
-                recordsEqual(previousRow.conditions, nextRow.conditions) &&
-                valuesEqual(previousRow.output, nextRow.output);
-            if (!settings.compressSimulationTable || !unchanged) rows.push(nextRow);
+            const isOtherShape = !(shape instanceof Process || shape instanceof Decision || shape instanceof Initialization);
+            if (settings.collapseOtherSteps && isOtherShape && lastStepWasOther &&
+                lastOtherRowIndex !== null && rows[lastOtherRowIndex]) {
+                const group = rows[lastOtherRowIndex];
+                group.variables = nextRow.variables;
+                group.output = nextRow.output;
+                group.outputs.push(...nextRow.outputs);
+                group.stepEnd = stepNumber;
+            } else if (settings.collapseConsecutiveConditions && shape instanceof Decision && lastStepWasDecision &&
+                previousRow?.shape instanceof Decision) {
+                Object.entries(nextRow.conditions).forEach(([id, conditions]) => {
+                    previousRow.conditions[id] = [...(previousRow.conditions[id] ?? []), ...conditions];
+                });
+                previousRow.variables = nextRow.variables;
+                previousRow.output = nextRow.output;
+                previousRow.stepEnd = stepNumber;
+            } else {
+                const unchanged = previousRow &&
+                    recordsEqual(previousRow.variables, nextRow.variables) &&
+                    recordsEqual(previousRow.conditions, nextRow.conditions) &&
+                    valuesEqual(previousRow.output, nextRow.output);
+                const keepGroupStart = settings.collapseOtherSteps && isOtherShape && !lastStepWasOther;
+                if (!settings.compressSimulationTable || !unchanged || keepGroupStart) {
+                    rows.push(nextRow);
+                    lastOtherRowIndex = isOtherShape ? rows.length - 1 : null;
+                } else if (!isOtherShape) {
+                    lastOtherRowIndex = null;
+                }
+            }
         }
+        lastStepWasDecision = shape instanceof Decision;
+        lastStepWasOther = !(shape instanceof Process || shape instanceof Decision || shape instanceof Initialization);
 
         let connection: LinkRecord | undefined;
         if (shape instanceof Decision) {
@@ -529,6 +579,9 @@ export function initSimulationPanel() {
         rows = [];
         executedSteps = 0;
         inputIndexes = {};
+        lastStepWasDecision = false;
+        lastStepWasOther = false;
+        lastOtherRowIndex = null;
         wholeOutputPanel.hidden = true;
         renderTable();
         setStatus("Ready");
@@ -573,7 +626,8 @@ export function initSimulationPanel() {
                 shape instanceof InputOutput && shape.inputOutputType === "input"
             );
             const missing = inputs.flatMap((shape) => inputVariables(shape).filter(({ name }) =>
-                inputSequence(inputValues[name]).length === 0
+                !Object.prototype.hasOwnProperty.call(inputValues, name) ||
+                (Array.isArray(inputValues[name]) && inputValues[name].length === 0)
             ).map(({ name }) => name));
             if (missing.length > 0) {
                 throw new Error(`Autorun requires simulation inputs in settings for: ${[...new Set(missing)].join(", ")}.`);
