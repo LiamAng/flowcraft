@@ -11,6 +11,8 @@ export type Settings = {
     showGrid: boolean;
     showSteps: boolean;
     showStepNumbers: boolean;
+    showProcessContentInSteps: boolean;
+    compressSimulationTable: boolean;
     autorun: boolean;
     inputs: Record<string, unknown>;
     simulationRatio: number;
@@ -29,6 +31,8 @@ export const defaultSettings: Settings = {
     showGrid: true,
     showSteps: false,
     showStepNumbers: true,
+    showProcessContentInSteps: false,
+    compressSimulationTable: false,
     autorun: false,
     inputs: {},
     simulationRatio: 0.32,
@@ -47,7 +51,7 @@ export function sanitizeSettings(raw: unknown): Partial<Settings> {
     if (value.decisionBranchLabels === "yes-no" || value.decisionBranchLabels === "true-false") {
         result.decisionBranchLabels = value.decisionBranchLabels;
     }
-    (["readOnly", "snap", "guides", "showGrid", "showSteps", "showStepNumbers", "autorun"] as const).forEach((key) => {
+    (["readOnly", "snap", "guides", "showGrid", "showSteps", "showStepNumbers", "showProcessContentInSteps", "compressSimulationTable", "autorun"] as const).forEach((key) => {
         if (typeof value[key] === "boolean") result[key] = value[key] as boolean;
     });
     if (typeof value.gridSize === "number" && Number.isFinite(value.gridSize)) {

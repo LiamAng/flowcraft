@@ -18,9 +18,25 @@
         .variable-editor-row,
         .settings-variable-row {
             display: grid;
-            grid-template-columns: minmax(90px, 1fr) minmax(90px, 0.7fr) minmax(100px, 1fr) auto;
+            grid-template-columns: minmax(90px, 1fr) minmax(90px, 0.7fr) auto;
             align-items: center;
             gap: 8px;
+        }
+
+        .settings-input-values {
+            display: grid;
+            grid-column: 1 / -1;
+            gap: 6px;
+        }
+
+        .settings-input-value {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            gap: 6px;
+        }
+
+        .settings-variable-row > button:nth-last-child(1) {
+            grid-column: 1 / -1;
         }
 
         .variable-editor-row:not(.with-value) {
@@ -439,10 +455,29 @@
 
         .simulation-controls {
             display: flex;
+            flex: 0 0 auto;
             align-items: center;
+            flex-wrap: wrap;
             gap: 7px;
             padding: 8px;
             border-bottom: 1px solid #e2e8f0;
+        }
+
+        .simulation-input-preview {
+            display: grid;
+            flex: 0 0 auto;
+            max-height: 120px;
+            gap: 4px;
+            overflow: auto;
+            padding: 8px 10px;
+            border-bottom: 1px solid #e2e8f0;
+            color: #475569;
+            font: 12px/1.4 Consolas, monospace;
+            overflow-wrap: anywhere;
+        }
+
+        .simulation-input-preview[hidden] {
+            display: none;
         }
 
         .simulation-header {
@@ -657,8 +692,7 @@
                 height: 100dvh;
             }
 
-            .variable-editor-row,
-            .settings-variable-row {
+            .variable-editor-row {
                 grid-template-columns: repeat(2, minmax(0, 1fr));
             }
 
@@ -666,9 +700,12 @@
                 grid-template-columns: repeat(2, minmax(0, 1fr));
             }
 
-            .variable-editor-row button,
-            .settings-variable-row button {
+            .variable-editor-row button {
                 grid-column: 2;
+            }
+
+            .settings-variable-row {
+                grid-template-columns: minmax(0, 1fr) minmax(90px, 0.7fr) auto;
             }
 
             .simulation-layout {

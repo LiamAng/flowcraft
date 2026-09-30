@@ -43,6 +43,28 @@ function display(value: unknown, accuracy: number): string {
     return String(value);
 }
 
+function inputSequence(value: unknown): unknown[] {
+    if (Array.isArray(value)) return value;
+    return value === undefined ? [] : [value];
+}
+
+function valuesEqual(left: unknown, right: unknown): boolean {
+    if (Object.is(left, right)) return true;
+    if (left === null || right === null || typeof left !== "object" || typeof right !== "object") return false;
+    try {
+        return JSON.stringify(left) === JSON.stringify(right);
+    } catch {
+        return false;
+    }
+}
+
+function recordsEqual(left: Record<string, unknown>, right: Record<string, unknown>): boolean {
+    const leftKeys = Object.keys(left).sort();
+    const rightKeys = Object.keys(right).sort();
+    return leftKeys.length === rightKeys.length &&
+        leftKeys.every((key, index) => key === rightKeys[index] && valuesEqual(left[key], right[key]));
+}
+
 function columnColor(name: string): string {
     let hash = 0;
     for (const character of name) {
@@ -174,11 +196,46 @@ export function initSimulationPanel() {
     const resetButton = document.createElement("button");
     resetButton.type = "button";
     resetButton.textContent = "Reset";
+    const runWithoutInputsButton = document.createElement("button");
+    runWithoutInputsButton.type = "button";
+    runWithoutInputsButton.textContent = "Run without predefined inputs";
+    const showInputsButton = document.createElement("button");
+    showInputsButton.type = "button";
+    showInputsButton.textContent = "Show predefined inputs";
+    showInputsButton.setAttribute("aria-expanded", "false");
     const status = document.createElement("span");
     status.className = "simulation-status";
     status.setAttribute("role", "status");
 
-    controls.append(nextButton, runButton, resetButton);
+    controls.append(nextButton, runButton, resetButton, runWithoutInputsButton, showInputsButton);
+
+    const inputsPreview = document.createElement("div");
+    inputsPreview.className = "simulation-input-preview";
+    inputsPreview.hidden = true;
+    inputsPreview.setAttribute("aria-label", "Predefined simulation inputs");
+    const renderInputsPreview = () => {
+        inputsPreview.replaceChildren();
+        const entries = Object.entries(settings.inputs);
+        if (entries.length === 0) {
+            inputsPreview.textContent = "No predefined inputs.";
+            return;
+        }
+        entries.forEach(([name, rawValues]) => {
+            const line = document.createElement("div");
+            const values = inputSequence(rawValues);
+            line.textContent = `${name}: ${values.length > 0
+                ? values.map((value) => typeof value === "string" ? JSON.stringify(value) : display(value, settings.valueAccuracy)).join(", ")
+                : "(no values)"}`;
+            inputsPreview.appendChild(line);
+        });
+    };
+    showInputsButton.addEventListener("click", () => {
+        const visible = inputsPreview.hidden;
+        inputsPreview.hidden = !visible;
+        showInputsButton.setAttribute("aria-expanded", String(visible));
+        showInputsButton.textContent = `${visible ? "Hide" : "Show"} predefined inputs`;
+        if (visible) renderInputsPreview();
+    });
 
     const tableWrapper = document.createElement("div");
     tableWrapper.className = "simulation-table-wrapper";
@@ -193,7 +250,7 @@ export function initSimulationPanel() {
     const wholeOutputContent = document.createElement("pre");
     wholeOutputContent.className = "simulation-output-content";
     wholeOutputPanel.append(wholeOutputHeading, wholeOutputContent);
-    panel.append(header, controls, tableWrapper, wholeOutputPanel, status);
+    panel.append(header, controls, inputsPreview, tableWrapper, wholeOutputPanel, status);
     document.body.appendChild(panel);
     document.body.appendChild(splitter);
 
@@ -254,6 +311,8 @@ export function initSimulationPanel() {
     let wholeOutput: unknown[] = [];
     let rows: SimulationRow[] = [];
     let running = false;
+    let executedSteps = 0;
+    let inputIndexes: Record<string, number> = {};
 
     const renderTable = () => {
         table.replaceChildren();
@@ -281,7 +340,9 @@ export function initSimulationPanel() {
             if (settings.showStepNumbers) {
                 const step = document.createElement("th");
                 step.scope = "row";
-                step.textContent = String(row.step);
+                step.textContent = settings.showProcessContentInSteps && row.shape instanceof Process
+                    ? row.shape.content.innerText.trim() || String(row.step)
+                    : String(row.step);
                 tr.appendChild(step);
             }
             variableNames.forEach((name) => {
@@ -338,6 +399,8 @@ export function initSimulationPanel() {
         lastOutput = "";
         wholeOutput = [];
         rows = [];
+        executedSteps = 0;
+        inputIndexes = {};
         wholeOutputPanel.hidden = true;
         runtime.reset();
         renderTable();
@@ -345,21 +408,31 @@ export function initSimulationPanel() {
         Shape.setSimulationFocus(current);
     };
 
-    const step = async (): Promise<boolean> => {
+    const step = async (usePredefinedInputs = true): Promise<boolean> => {
         if (!current) await start();
         if (!current) return false;
         const runtime = await getSimulator();
-        if (rows.length >= MAX_STEPS) {
+        if (executedSteps >= MAX_STEPS) {
             throw new Error(`Simulation stopped after ${MAX_STEPS} steps to prevent an infinite loop.`);
         }
 
         const shape = current;
+        const stepNumber = executedSteps + 1;
         let condition: boolean | undefined;
         if (shape instanceof InputOutput && shape.inputOutputType === "input") {
             const variables = inputVariables(shape);
             if (variables.length === 0) throw new Error(`Add at least one variable to Input ${shape.id}.`);
             const inputValues = settings.inputs;
-            const missingVariables = variables.filter(({ name }) => !Object.prototype.hasOwnProperty.call(inputValues, name));
+            const configuredValues = new Map<string, unknown>();
+            const missingVariables = variables.filter(({ name }) => {
+                const values = inputSequence(inputValues[name]);
+                const index = inputIndexes[name] ?? 0;
+                if (usePredefinedInputs && index < values.length) {
+                    configuredValues.set(name, values[index]);
+                    return false;
+                }
+                return true;
+            });
             let enteredValues: Record<string, unknown> = {};
             if (missingVariables.length > 0) {
                 const entered = await requestInput(missingVariables);
@@ -371,8 +444,9 @@ export function initSimulationPanel() {
                 enteredValues = entered.values;
             }
             variables.forEach(({ name, type }) => {
-                const value = Object.prototype.hasOwnProperty.call(inputValues, name) ? inputValues[name] : enteredValues[name];
+                const value = configuredValues.has(name) ? configuredValues.get(name) : enteredValues[name];
                 runtime.getScope()[name] = type === "number" ? Number(value) : String(value);
+                if (configuredValues.has(name)) inputIndexes[name] = (inputIndexes[name] ?? 0) + 1;
             });
         } else if (shape instanceof Decision) {
             if (!shape.programCode.trim()) throw new Error(`Enter a true/false expression in Decision ${shape.id}'s code.`);
@@ -398,14 +472,21 @@ export function initSimulationPanel() {
             });
         }
 
+        executedSteps = stepNumber;
         if (!(shape instanceof Terminator)) {
-            rows.push({
-                step: rows.length + 1,
+            const nextRow: SimulationRow = {
+                step: stepNumber,
                 shape,
                 variables: { ...runtime.getScope() },
                 conditions: shape instanceof Decision && condition !== undefined ? { [shape.id]: condition } : {},
                 output: shape instanceof InputOutput && shape.inputOutputType === "output" ? lastOutput : "",
-            });
+            };
+            const previousRow = rows[rows.length - 1];
+            const unchanged = previousRow &&
+                recordsEqual(previousRow.variables, nextRow.variables) &&
+                recordsEqual(previousRow.conditions, nextRow.conditions) &&
+                valuesEqual(previousRow.output, nextRow.output);
+            if (!settings.compressSimulationTable || !unchanged) rows.push(nextRow);
         }
 
         let connection: LinkRecord | undefined;
@@ -427,7 +508,7 @@ export function initSimulationPanel() {
             Shape.setSimulationFocus(null);
             return false;
         }
-        setStatus(`Step ${rows.length}`);
+        setStatus(`Step ${executedSteps}`);
         return true;
     };
 
@@ -446,6 +527,8 @@ export function initSimulationPanel() {
         lastOutput = "";
         wholeOutput = [];
         rows = [];
+        executedSteps = 0;
+        inputIndexes = {};
         wholeOutputPanel.hidden = true;
         renderTable();
         setStatus("Ready");
@@ -453,13 +536,14 @@ export function initSimulationPanel() {
     };
 
     nextButton.addEventListener("click", () => guard(async () => { await step(); }));
-    runButton.addEventListener("click", async () => {
+    const runAll = async (usePredefinedInputs: boolean) => {
         if (running) return;
         running = true;
         nextButton.disabled = true;
         runButton.disabled = true;
+        runWithoutInputsButton.disabled = true;
         try {
-            while (await step()) {
+            while (await step(usePredefinedInputs)) {
                 await new Promise<void>((resolve) => window.setTimeout(resolve, settings.simulationStepDelay));
             }
         } catch (error) {
@@ -468,11 +552,17 @@ export function initSimulationPanel() {
             running = false;
             nextButton.disabled = false;
             runButton.disabled = false;
+            runWithoutInputsButton.disabled = false;
         }
-    });
+    };
+    runButton.addEventListener("click", () => runAll(true));
+    runWithoutInputsButton.addEventListener("click", () => runAll(false));
     resetButton.addEventListener("click", reset);
     document.addEventListener("flowcraft:diagramchange", reset);
-    document.addEventListener("flowcraft:settings", renderTable);
+    document.addEventListener("flowcraft:settings", () => {
+        renderTable();
+        if (!inputsPreview.hidden) renderInputsPreview();
+    });
 
     const autorun = () => {
         if (!settings.autorun) return;
@@ -483,7 +573,7 @@ export function initSimulationPanel() {
                 shape instanceof InputOutput && shape.inputOutputType === "input"
             );
             const missing = inputs.flatMap((shape) => inputVariables(shape).filter(({ name }) =>
-                !Object.prototype.hasOwnProperty.call(inputValues, name)
+                inputSequence(inputValues[name]).length === 0
             ).map(({ name }) => name));
             if (missing.length > 0) {
                 throw new Error(`Autorun requires simulation inputs in settings for: ${[...new Set(missing)].join(", ")}.`);
