@@ -1,4 +1,4 @@
-import type { Shape } from "./shapes";
+import { Decision, InputOutput, Shape } from "./shapes";
 
 let dialog: HTMLDialogElement | null = null;
 let editor: HTMLTextAreaElement | null = null;
@@ -13,6 +13,7 @@ function createDialog() {
         event.preventDefault();
         if (activeShape && editor) {
             activeShape.programCode = editor.value;
+            Shape.notifyDiagramChange();
         }
         element.close();
     });
@@ -28,6 +29,9 @@ function createDialog() {
     editor.setAttribute("aria-label", "Shape code");
     label.appendChild(editor);
 
+    const help = document.createElement("p");
+    help.className = "program-editor-help";
+
     const actions = document.createElement("div");
     actions.className = "program-editor-actions";
 
@@ -41,7 +45,7 @@ function createDialog() {
     save.textContent = "Save";
 
     actions.append(cancel, save);
-    form.append(title, label, actions);
+    form.append(title, label, help, actions);
     element.appendChild(form);
     element.addEventListener("close", () => {
         activeShape = null;
@@ -60,6 +64,18 @@ export function openProgramEditor(shape: Shape) {
 
     activeShape = shape;
     editor.value = shape.programCode;
+    const help = dialog.querySelector<HTMLElement>(".program-editor-help");
+    let guidance: string;
+    if (shape instanceof InputOutput) {
+        guidance = shape.inputOutputType === "input"
+            ? "Enter one or more variable names separated by commas, e.g. Name, LastName, PhoneNumber. Simulation asks for each value or reads it from the inputs URL parameter."
+            : "Enter a JavaScript expression to display as the output.";
+    } else if (shape instanceof Decision) {
+        guidance = "Enter a JavaScript expression. A truthy result follows Yes; a false result follows No.";
+    } else {
+        guidance = "Enter JavaScript statements. Variables are shared with later steps; declare new variables with let or var.";
+    }
+    if (help) help.textContent = guidance;
     dialog.showModal();
     editor.focus();
 }

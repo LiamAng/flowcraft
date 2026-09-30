@@ -1,0 +1,366 @@
+import { Simulator } from "./simulator";
+import { Decision, Shape, Terminator, InputOutput, type LinkRecord } from "./shapes";
+import { Process } from "./shapes/Process";
+import { validateFlowchart } from "./flowValidation";
+
+type SimulationRow = {
+    step: number;
+    shape: Shape;
+    variables: Record<string, unknown>;
+    conditions: Record<string, boolean>;
+    output: unknown;
+};
+
+const INPUT_NAME = /^[A-Za-z_$][\w$]*$/;
+const MAX_STEPS = 10000;
+type InputDialogResult = { cancelled: true } | { cancelled: false; values: Record<string, unknown> };
+
+function parseInputNames(code: string, shapeId: string): string[] {
+    const names = code.split(",").map((name) => name.trim());
+    if (!code.trim() || names.some((name) => !INPUT_NAME.test(name)) || new Set(names).size !== names.length) {
+        throw new Error(`Set one or more unique, valid variable names separated by commas in the code for Input ${shapeId}.`);
+    }
+    return names;
+}
+
+function display(value: unknown): string {
+    if (value === undefined) return "";
+    if (value === null) return "null";
+    if (typeof value === "string") return value;
+    if (typeof value === "object") {
+        try {
+            return JSON.stringify(value);
+        } catch {
+            return "[value]";
+        }
+    }
+    return String(value);
+}
+
+function columnColor(name: string): string {
+    let hash = 0;
+    for (const character of name) {
+        hash = (hash * 31 + character.charCodeAt(0)) | 0;
+    }
+    return `hsl(${Math.abs(hash) % 360} 75% 92%)`;
+}
+
+function parseInputValue(value: string): unknown {
+    try {
+        return JSON.parse(value);
+    } catch {
+        return value;
+    }
+}
+
+function createInputDialog() {
+    const dialog = document.createElement("dialog");
+    dialog.className = "simulation-input-dialog";
+    const form = document.createElement("form");
+    const title = document.createElement("h2");
+    const fields = document.createElement("div");
+    fields.className = "simulation-input-fields";
+    const actions = document.createElement("div");
+    actions.className = "program-editor-actions";
+    const cancel = document.createElement("button");
+    cancel.type = "button";
+    cancel.textContent = "Cancel";
+    const submit = document.createElement("button");
+    submit.type = "submit";
+    submit.textContent = "Continue";
+    actions.append(cancel, submit);
+    form.append(title, fields, actions);
+    dialog.appendChild(form);
+    document.body.appendChild(dialog);
+
+    const request = (names: string[]): Promise<InputDialogResult> => new Promise((resolve) => {
+        title.textContent = names.length === 1 ? `Input: ${names[0]}` : "Enter input values";
+        fields.replaceChildren();
+        const inputs = names.map((name) => {
+            const label = document.createElement("label");
+            label.textContent = name;
+            const input = document.createElement("input");
+            input.type = "text";
+            input.autocomplete = "off";
+            input.name = name;
+            label.appendChild(input);
+            fields.appendChild(label);
+            return input;
+        });
+        const finish = (result: InputDialogResult) => {
+            dialog.removeEventListener("close", onClose);
+            dialog.close();
+            resolve(result);
+        };
+        const onClose = () => resolve({ cancelled: true });
+        cancel.onclick = () => finish({ cancelled: true });
+        form.onsubmit = (event) => {
+            event.preventDefault();
+            const values = Object.fromEntries(inputs.map((input) => [input.name, parseInputValue(input.value)]));
+            finish({ cancelled: false, values });
+        };
+        dialog.addEventListener("close", onClose, { once: true });
+        dialog.showModal();
+        inputs[0]?.focus();
+    });
+
+    return request;
+}
+
+function readUrlInputs(): Record<string, unknown> {
+    const raw = new URLSearchParams(window.location.search).get("inputs");
+    if (!raw) return {};
+    const values: unknown = JSON.parse(raw);
+    if (!values || typeof values !== "object" || Array.isArray(values)) {
+        throw new Error("The inputs query must be a JSON object, such as ?inputs=%7B%22count%22%3A3%7D.");
+    }
+    return values as Record<string, unknown>;
+}
+
+export function initSimulationPanel() {
+    const params = new URLSearchParams(window.location.search);
+    Shape.showSimulationFlowline = params.has("showSteps") && params.get("showSteps") !== "false";
+    document.documentElement.classList.add("simulation-layout");
+
+    const panel = document.createElement("section");
+    panel.className = "simulation-panel";
+    panel.setAttribute("aria-label", "Flowchart simulation");
+
+    const controls = document.createElement("div");
+    controls.className = "simulation-controls";
+
+    const nextButton = document.createElement("button");
+    nextButton.type = "button";
+    nextButton.textContent = "Next step";
+
+    const runButton = document.createElement("button");
+    runButton.type = "button";
+    runButton.textContent = "Run all";
+
+    const resetButton = document.createElement("button");
+    resetButton.type = "button";
+    resetButton.textContent = "Reset";
+
+    const status = document.createElement("span");
+    status.className = "simulation-status";
+    status.setAttribute("role", "status");
+
+    controls.append(nextButton, runButton, resetButton);
+
+    const tableWrapper = document.createElement("div");
+    tableWrapper.className = "simulation-table-wrapper";
+    const table = document.createElement("table");
+    table.className = "simulation-table";
+    tableWrapper.appendChild(table);
+    panel.append(controls, tableWrapper, status);
+    document.body.appendChild(panel);
+
+    const simulator = new Simulator();
+    const requestInput = createInputDialog();
+    let current: Shape | null = null;
+    let previousConnection: LinkRecord | null = null;
+    let lastOutput: unknown = "";
+    let rows: SimulationRow[] = [];
+    let conditions: Record<string, boolean> = {};
+    let running = false;
+    let inputValues: Record<string, unknown> = {};
+    let inputConfigError: unknown = null;
+    try {
+        inputValues = readUrlInputs();
+    } catch (error) {
+        inputConfigError = error;
+    }
+    const automatic = params.has("autorun") && params.get("autorun") !== "false";
+
+    const renderTable = () => {
+        table.replaceChildren();
+        const variableNames = [...new Set(rows.flatMap((row) => Object.keys(row.variables)))].sort();
+        const decisionShapes = Shape.all.filter((shape) => shape instanceof Decision);
+        const head = document.createElement("thead");
+        const headerRow = document.createElement("tr");
+        ["Step", ...variableNames, ...decisionShapes.map((shape) => `Condition: ${shape.content.textContent?.trim() || shape.id}`), "Output"].forEach((title, index, all) => {
+            const cell = document.createElement("th");
+            cell.textContent = title;
+            if (index > 0 && index < all.length - 1) cell.style.backgroundColor = columnColor(title);
+            headerRow.appendChild(cell);
+        });
+        head.appendChild(headerRow);
+        table.appendChild(head);
+
+        const body = document.createElement("tbody");
+        rows.forEach((row) => {
+            const tr = document.createElement("tr");
+            const step = document.createElement("th");
+            step.scope = "row";
+            step.textContent = `${row.step}. ${row.shape.content.textContent?.trim() || row.shape.id}`;
+            tr.appendChild(step);
+            variableNames.forEach((name) => {
+                const cell = document.createElement("td");
+                cell.textContent = display(row.variables[name]);
+                cell.style.backgroundColor = columnColor(name);
+                tr.appendChild(cell);
+            });
+            decisionShapes.forEach((shape) => {
+                const cell = document.createElement("td");
+                cell.textContent = row.conditions[shape.id] === undefined ? "" : row.conditions[shape.id] ? "true" : "false";
+                cell.style.backgroundColor = columnColor(`condition:${shape.id}`);
+                tr.appendChild(cell);
+            });
+            const output = document.createElement("td");
+            output.textContent = display(row.output);
+            tr.appendChild(output);
+            body.appendChild(tr);
+        });
+        table.appendChild(body);
+        tableWrapper.scrollTop = tableWrapper.scrollHeight;
+    };
+
+    const setError = (error: unknown) => {
+        status.textContent = error instanceof Error ? error.message : "Simulation failed.";
+        status.classList.add("error");
+    };
+
+    const setStatus = (message: string) => {
+        status.textContent = message;
+        status.classList.remove("error");
+    };
+
+    const start = () => {
+        if (current) return;
+        const issues = validateFlowchart();
+        if (issues.length > 0) {
+            throw new Error(`Fix flowchart warnings before running: ${issues.join(" ")}`);
+        }
+        const starts = Shape.all.filter((shape) => shape instanceof Terminator && shape.terminatorType === "start");
+        if (starts.length !== 1) throw new Error("Simulation requires exactly one Start terminator.");
+        current = starts[0];
+        previousConnection = null;
+        lastOutput = "";
+        rows = [];
+        conditions = {};
+        simulator.reset();
+        renderTable();
+        setStatus("Ready");
+        Shape.setSimulationFocus(current);
+    };
+
+    const step = async (): Promise<boolean> => {
+        if (!current) start();
+        if (!current) return false;
+        if (rows.length >= MAX_STEPS) {
+            throw new Error(`Simulation stopped after ${MAX_STEPS} steps to prevent an infinite loop.`);
+        }
+
+        const shape = current;
+        let condition: boolean | undefined;
+        if (shape instanceof InputOutput && shape.inputOutputType === "input") {
+            const names = parseInputNames(shape.programCode, shape.id);
+            const missingNames = names.filter((name) => !Object.prototype.hasOwnProperty.call(inputValues, name));
+            let enteredValues: Record<string, unknown> = {};
+            if (missingNames.length > 0) {
+                const entered = await requestInput(missingNames);
+                if (entered.cancelled) {
+                    setStatus("Input cancelled");
+                    return false;
+                }
+                enteredValues = entered.values;
+            }
+            names.forEach((name) => {
+                simulator.getScope()[name] = Object.prototype.hasOwnProperty.call(inputValues, name) ? inputValues[name] : enteredValues[name];
+            });
+        } else if (shape instanceof Decision) {
+            if (!shape.programCode.trim()) throw new Error(`Enter a true/false expression in Decision ${shape.id}'s code.`);
+            condition = Boolean(simulator.evaluate(shape.programCode));
+            conditions[shape.id] = condition;
+        } else if (shape instanceof InputOutput && shape.inputOutputType === "output") {
+            if (!shape.programCode.trim()) throw new Error(`Enter an expression in Output ${shape.id}'s code.`);
+            lastOutput = simulator.evaluate(shape.programCode);
+        } else if (shape instanceof Process && shape.programCode.trim()) {
+            simulator.exec(shape.programCode);
+        }
+
+        rows.push({
+            step: rows.length + 1,
+            shape,
+            variables: { ...simulator.getScope() },
+            conditions: { ...conditions },
+            output: shape instanceof InputOutput && shape.inputOutputType === "output" ? lastOutput : "",
+        });
+
+        let connection: LinkRecord | undefined;
+        if (shape instanceof Decision) {
+            const role = condition ? "next" : "altNext";
+            connection = Shape.connections.find((link) => link.from === shape && link.role === role);
+        } else {
+            connection = Shape.connections.find((link) => link.from === shape);
+        }
+
+        current = connection?.to ?? null;
+        previousConnection = connection ?? null;
+        renderTable();
+        Shape.setSimulationFocus(shape, previousConnection);
+
+        if (!current) {
+            setStatus("Finished");
+            return false;
+        }
+        setStatus(`Step ${rows.length}`);
+        return true;
+    };
+
+    const guard = async (action: () => Promise<void> | void) => {
+        try {
+            await action();
+        } catch (error) {
+            setError(error);
+        }
+    };
+
+    const reset = () => {
+        simulator.reset();
+        current = null;
+        previousConnection = null;
+        lastOutput = "";
+        rows = [];
+        conditions = {};
+        renderTable();
+        setStatus("Ready");
+        Shape.setSimulationFocus(null);
+    };
+
+    nextButton.addEventListener("click", () => guard(async () => { await step(); }));
+    runButton.addEventListener("click", async () => {
+        if (running) return;
+        running = true;
+        nextButton.disabled = true;
+        runButton.disabled = true;
+        try {
+            while (await step()) await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
+        } catch (error) {
+            setError(error);
+        } finally {
+            running = false;
+            nextButton.disabled = false;
+            runButton.disabled = false;
+        }
+    });
+    resetButton.addEventListener("click", reset);
+    document.addEventListener("flowcraft:diagramchange", reset);
+
+    const autorun = () => {
+        if (!automatic) return;
+        try {
+            if (inputConfigError) throw inputConfigError;
+            const inputs = Shape.all.filter((shape) => shape instanceof InputOutput && shape.inputOutputType === "input");
+            const missing = inputs.flatMap((shape) => parseInputNames(shape.programCode, shape.id).filter((name) => !Object.prototype.hasOwnProperty.call(inputValues, name)));
+            if (missing.length > 0) {
+                throw new Error(`Autorun requires URL inputs for: ${[...new Set(missing)].join(", ")}.`);
+            }
+            runButton.click();
+        } catch (error) {
+            setError(error);
+        }
+    };
+
+    return autorun;
+}

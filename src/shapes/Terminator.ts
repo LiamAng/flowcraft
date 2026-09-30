@@ -27,5 +27,6 @@ export class Terminator extends Shape {
 
         this.element.dataset.tooltip = display;
         this.content.textContent = display;
+        Shape.notifyDiagramChange();
     }
 }

@@ -1,12 +1,21 @@
 import { Shape, Process, Decision, InputOutput, Terminator } from "./shapes";
 import { pickTerminatorType } from "./terminatorPicker";
-import { Simulator } from "./simulator";
+import { pickInputOutputType } from "./inputOutputPicker";
 import { initLinkPicker } from "./linkPicker";
 import { initSelection } from "./selection";
 import { initTooltip } from "./tooltip";
+import { initFlowValidation } from "./flowValidation";
+import { initDiagramIO } from "./diagramIO";
+import { initSimulationPanel } from "./simulationPanel";
 
 export const chart: HTMLElement = document.querySelector('.chart') as HTMLElement;
+const canvas = document.createElement("div");
+canvas.className = "chart-world";
+chart.appendChild(canvas);
+Shape.canvas = canvas;
 const palette = document.getElementById('shape-palette') as HTMLDivElement;
+Shape.readOnly = new URLSearchParams(window.location.search).has("readonly");
+document.documentElement.classList.toggle("read-only", Shape.readOnly);
 
 const factoryMap = {
     process: () => new Process(),
@@ -18,7 +27,8 @@ const factoryMap = {
 let selectedTool: keyof typeof factoryMap = 'process';
 
 function addShape<T extends Shape>(shape: T): T {
-    chart.appendChild(shape.element);
+    canvas.appendChild(shape.element);
+    Shape.notifyDiagramChange();
     return shape;
 }
 
@@ -73,15 +83,23 @@ function renderPalette() {
             const drop = (upEvent: PointerEvent) => {
                 const element = document.elementFromPoint(upEvent.clientX, upEvent.clientY) as Element | null;
                 const chartTarget = element?.closest('.chart');
-                const rect = chart.getBoundingClientRect();
-                const dropX = upEvent.clientX - rect.left;
-                const dropY = upEvent.clientY - rect.top;
+                const dropPoint = Shape.clientToCanvas(upEvent.clientX, upEvent.clientY);
+                const dropX = dropPoint.x;
+                const dropY = dropPoint.y;
 
                 if (chartTarget === chart) {
                     if (tool.key === 'terminator') {
                         pickTerminatorType(upEvent.clientX, upEvent.clientY).then((type) => {
                             if (type) {
                                 const shape = new Terminator(type);
+                                shape.setCenter(dropX, dropY);
+                                addShape(shape);
+                            }
+                        });
+                    } else if (tool.key === 'input-output') {
+                        pickInputOutputType(upEvent.clientX, upEvent.clientY).then((type) => {
+                            if (type) {
+                                const shape = new InputOutput(type);
                                 shape.setCenter(dropX, dropY);
                                 addShape(shape);
                             }
@@ -116,7 +134,55 @@ function renderPalette() {
     active?.classList.add('active');
 }
 
-renderPalette();
-initLinkPicker(chart, addShape);
-initSelection(chart);
+const zoomControls = document.createElement("div");
+zoomControls.className = "canvas-zoom";
+zoomControls.setAttribute("aria-label", "Canvas zoom");
+const zoomLabel = document.createElement("span");
+zoomLabel.className = "canvas-zoom-level";
+const updateZoomLabel = () => {
+    zoomLabel.textContent = `${Math.round(Shape.zoom * 100)}%`;
+};
+updateZoomLabel();
+[
+    { label: "−", title: "Zoom out", amount: -0.1 },
+    { label: "+", title: "Zoom in", amount: 0.1 },
+].forEach(({ label, title, amount }) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = label;
+    button.title = title;
+    button.setAttribute("aria-label", title);
+    button.addEventListener("click", () => {
+        Shape.setZoom(Shape.zoom + amount);
+        updateZoomLabel();
+    });
+    zoomControls.appendChild(button);
+});
+const resetZoom = document.createElement("button");
+resetZoom.type = "button";
+resetZoom.textContent = "Reset";
+resetZoom.title = "Reset zoom";
+resetZoom.addEventListener("click", () => {
+    Shape.setZoom(1);
+    updateZoomLabel();
+});
+zoomControls.append(resetZoom, zoomLabel);
+document.body.appendChild(zoomControls);
+chart.addEventListener("wheel", (event: WheelEvent) => {
+    if (!event.ctrlKey && !event.metaKey) return;
+    event.preventDefault();
+    Shape.setZoom(Shape.zoom + (event.deltaY < 0 ? 0.1 : -0.1));
+    updateZoomLabel();
+}, { passive: false });
+
+if (!Shape.readOnly) {
+    renderPalette();
+    initLinkPicker(chart, addShape);
+    initSelection(chart);
+}
 initTooltip();
+initFlowValidation();
+void initDiagramIO(addShape).then((loaded) => {
+    const autorun = initSimulationPanel();
+    if (loaded) autorun();
+});

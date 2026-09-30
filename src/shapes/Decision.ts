@@ -21,6 +21,10 @@ export class Decision extends Shape {
         return 2;
     }
 
+    protected override getBranchLabel(role: "next" | "altNext"): string {
+        return role === "next" ? "Yes" : "No";
+    }
+
     get altNext(): Shape | null {
         return this.outgoingLinks.find((link) => link.role === "altNext")?.to ?? null;
     }

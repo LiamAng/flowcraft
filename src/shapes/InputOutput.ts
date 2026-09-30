@@ -1,6 +1,10 @@
 import { Shape, LinkDirection } from "./Shape";
 
+export type InputOutputType = "input" | "output";
+
 export class InputOutput extends Shape {
+    public inputOutputType: InputOutputType = "input";
+
     protected override isProgrammable(): boolean {
         return true;
     }
@@ -16,7 +20,7 @@ export class InputOutput extends Shape {
         return point;
     }
 
-    constructor() {
+    constructor(type: InputOutputType = "input") {
         super();
         this.content.classList.add("parallelogram");
         this.width = 180;
@@ -24,6 +28,14 @@ export class InputOutput extends Shape {
         this.minWidth = 180;
         this.minHeight = 80;
         this.ratio = this.minWidth / this.minHeight;
+        this.setInputOutputType(type);
         this.apply();
+    }
+
+    setInputOutputType(type: InputOutputType) {
+        this.inputOutputType = type;
+        const display = type === "input" ? "Input" : "Output";
+        this.element.dataset.tooltip = display;
+        this.content.textContent = display;
     }
 }

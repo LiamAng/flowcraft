@@ -10,10 +10,412 @@
         }
 
         .chart {
+            position: relative;
             width: 100vw;
             height: 100vh;
+            overflow: hidden;
+        }
+
+        .chart-world {
+            position: absolute;
+            inset: 0;
+            transform: scale(1);
+            transform-origin: center;
             background-size: 40px 40px;
             background-image: radial-gradient(circle, #000000 1px, rgba(0, 0, 0, 0) 1px);
+        }
+
+        .canvas-zoom {
+            position: fixed;
+            bottom: 12px;
+            left: 12px;
+            z-index: 30;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            padding: 6px;
+            border: 1px solid #cbd5e1;
+            border-radius: 10px;
+            background: rgba(255, 255, 255, 0.94);
+            box-shadow: 0 4px 14px rgba(15, 23, 42, 0.12);
+            font: 13px system-ui, sans-serif;
+        }
+
+        .canvas-zoom button {
+            min-width: 30px;
+            height: 28px;
+            border: 0;
+            border-radius: 6px;
+            background: transparent;
+            color: #334155;
+            cursor: pointer;
+            font: inherit;
+        }
+
+        .canvas-zoom button:hover,
+        .canvas-zoom button:focus-visible {
+            background: #e2e8f0;
+            outline: none;
+        }
+
+        .canvas-zoom-level {
+            min-width: 42px;
+            color: #475569;
+            text-align: center;
+        }
+
+        .simulation-layout {
+            --simulation-width: min(420px, 36vw);
+            overflow: hidden;
+        }
+
+        .simulation-layout .chart {
+            position: relative;
+            width: calc(100vw - var(--simulation-width));
+            height: 100vh;
+        }
+
+        .simulation-layout .flow-validation {
+            right: calc(var(--simulation-width) + 12px);
+        }
+
+        .simulation-layout .diagram-file-tools {
+            right: calc(var(--simulation-width) + 58px);
+        }
+
+        .flow-validation {
+            position: fixed;
+            top: 12px;
+            right: 12px;
+            z-index: 30;
+            font: 13px system-ui, sans-serif;
+        }
+
+        .flow-validation-button {
+            position: relative;
+            display: grid;
+            width: 36px;
+            height: 36px;
+            padding: 8px;
+            place-items: center;
+            border: 1px solid #cbd5e1;
+            border-radius: 10px;
+            background: #fff;
+            color: #64748b;
+            box-shadow: 0 4px 14px rgba(15, 23, 42, 0.14);
+            cursor: pointer;
+        }
+
+        .flow-validation-button.has-issues {
+            border-color: #f59e0b;
+            color: #b45309;
+        }
+
+        .flow-validation-button svg {
+            width: 20px;
+            height: 20px;
+            fill: none;
+            stroke: currentColor;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+            stroke-width: 1.8;
+        }
+
+        .flow-validation-count {
+            position: absolute;
+            top: -6px;
+            right: -6px;
+            min-width: 16px;
+            padding: 1px 4px;
+            border-radius: 999px;
+            background: #dc2626;
+            color: white;
+            font-size: 10px;
+            font-weight: 700;
+            line-height: 14px;
+            text-align: center;
+        }
+
+        .flow-validation-panel {
+            position: absolute;
+            top: 44px;
+            right: 0;
+            width: min(340px, calc(100vw - 24px));
+            max-height: min(60vh, 440px);
+            overflow: auto;
+            padding: 8px 14px;
+            border: 1px solid #e2e8f0;
+            border-radius: 10px;
+            background: white;
+            color: #334155;
+            box-shadow: 0 10px 30px rgba(15, 23, 42, 0.18);
+        }
+
+        .flow-validation-panel[hidden] {
+            display: none;
+        }
+
+        .flow-validation-panel ul {
+            display: grid;
+            gap: 8px;
+            margin: 4px 0;
+            padding-left: 18px;
+        }
+
+        .flow-validation-panel li::marker {
+            color: #d97706;
+        }
+
+        .flow-validation-panel p {
+            margin: 4px 0;
+        }
+
+        .diagram-file-tools {
+            position: fixed;
+            top: 12px;
+            right: 58px;
+            z-index: 30;
+            display: flex;
+            align-items: flex-start;
+            gap: 8px;
+            font: 13px system-ui, sans-serif;
+        }
+
+        .diagram-file-tools > button,
+        .readonly-badge {
+            padding: 8px 12px;
+            border: 1px solid #cbd5e1;
+            border-radius: 9px;
+            background: #fff;
+            color: #334155;
+            box-shadow: 0 4px 14px rgba(15, 23, 42, 0.12);
+            font: inherit;
+        }
+
+        .diagram-file-tools > button {
+            cursor: pointer;
+        }
+
+        .diagram-file-tools > button:hover,
+        .diagram-file-tools > button:focus-visible {
+            border-color: cornflowerblue;
+            outline: none;
+        }
+
+        .readonly-badge {
+            color: #475569;
+        }
+
+        .diagram-file-status {
+            position: absolute;
+            top: 44px;
+            right: 0;
+            width: max-content;
+            max-width: min(360px, calc(100vw - 24px));
+            padding: 8px 12px;
+            border: 1px solid #cbd5e1;
+            border-radius: 8px;
+            background: white;
+            color: #334155;
+            box-shadow: 0 4px 14px rgba(15, 23, 42, 0.12);
+        }
+
+        .diagram-file-status.error {
+            border-color: #fca5a5;
+            color: #b91c1c;
+        }
+
+        .diagram-file-status[hidden] {
+            display: none;
+        }
+
+        .simulation-panel {
+            position: fixed;
+            top: 0;
+            right: 0;
+            bottom: 0;
+            z-index: 25;
+            display: flex;
+            width: var(--simulation-width, 420px);
+            flex-direction: column;
+            overflow: hidden;
+            border-left: 1px solid #cbd5e1;
+            background: #fff;
+            box-shadow: -6px 0 24px rgba(15, 23, 42, 0.1);
+            font: 12px system-ui, sans-serif;
+        }
+
+        .simulation-controls {
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            padding: 8px;
+            border-bottom: 1px solid #e2e8f0;
+        }
+
+        .simulation-controls button {
+            padding: 6px 10px;
+            border: 1px solid #cbd5e1;
+            border-radius: 7px;
+            background: #fff;
+            color: #334155;
+            font: inherit;
+            cursor: pointer;
+        }
+
+        .simulation-controls button:hover:not(:disabled) {
+            border-color: cornflowerblue;
+        }
+
+        .simulation-controls button:disabled {
+            cursor: wait;
+            opacity: 0.6;
+        }
+
+        .simulation-status {
+            flex: 0 0 auto;
+            min-height: 18px;
+            padding: 8px 10px;
+            border-top: 1px solid #e2e8f0;
+            color: #64748b;
+            overflow-wrap: anywhere;
+        }
+
+        .simulation-status.error {
+            color: #b91c1c;
+        }
+
+        .simulation-table-wrapper {
+            min-height: 0;
+            flex: 1;
+            overflow: auto;
+        }
+
+        .simulation-table {
+            width: 100%;
+            border-collapse: collapse;
+            white-space: nowrap;
+        }
+
+        .simulation-table th,
+        .simulation-table td {
+            padding: 6px 9px;
+            border-right: 1px solid rgba(148, 163, 184, 0.35);
+            border-bottom: 1px solid #e2e8f0;
+            text-align: left;
+        }
+
+        .simulation-table thead {
+            position: sticky;
+            top: 0;
+            z-index: 1;
+            background: #f8fafc;
+        }
+
+        .simulation-table th:last-child,
+        .simulation-table td:last-child {
+            border-right: 0;
+        }
+
+        .shape.simulation-current {
+            outline: 3px solid #f59e0b;
+            outline-offset: 3px;
+        }
+
+        .link-layer path.simulation-flowline {
+            stroke: #f59e0b;
+            stroke-width: 3.5;
+            filter: drop-shadow(0 0 3px rgba(245, 158, 11, 0.65));
+        }
+
+        .simulation-input-dialog {
+            width: min(380px, calc(100vw - 32px));
+            max-width: none;
+            padding: 0;
+            border: 1px solid #cbd5e1;
+            border-radius: 12px;
+            color: #0f172a;
+            box-shadow: 0 18px 48px rgba(15, 23, 42, 0.25);
+        }
+
+        .simulation-input-dialog::backdrop {
+            background: rgba(15, 23, 42, 0.45);
+        }
+
+        .simulation-input-dialog form {
+            display: grid;
+            gap: 14px;
+            padding: 20px;
+        }
+
+        .simulation-input-dialog h2 {
+            margin: 0;
+            font: 600 18px system-ui, sans-serif;
+        }
+
+        .simulation-input-fields {
+            display: grid;
+            gap: 12px;
+            max-height: min(55vh, 420px);
+            overflow-y: auto;
+        }
+
+        .simulation-input-dialog label {
+            display: grid;
+            gap: 7px;
+            font: 600 13px system-ui, sans-serif;
+        }
+
+        .simulation-input-dialog input {
+            padding: 9px 10px;
+            border: 1px solid #cbd5e1;
+            border-radius: 7px;
+            font: 14px system-ui, sans-serif;
+            user-select: text;
+        }
+
+        @media (max-width: 760px) {
+            .simulation-layout {
+                --simulation-width: 100vw;
+            }
+
+            .simulation-layout .chart {
+                width: 100vw;
+                height: 58vh;
+            }
+
+            .simulation-layout .simulation-panel {
+                top: 58vh;
+                width: 100vw;
+                border-top: 1px solid #cbd5e1;
+                border-left: 0;
+            }
+
+            .simulation-layout .flow-validation,
+            .simulation-layout .diagram-file-tools {
+                top: 8px;
+            }
+
+            .simulation-layout .flow-validation {
+                right: 8px;
+            }
+
+            .simulation-layout .diagram-file-tools {
+                right: 54px;
+            }
+        }
+
+        .read-only #shape-palette,
+        .read-only .shape-actions,
+        .read-only .handle,
+        .read-only .link-handle {
+            display: none !important;
+        }
+
+        .read-only .link-hit,
+        .read-only .link-turn,
+        .read-only .link-label {
+            pointer-events: none !important;
         }
 
         .shape {
@@ -111,8 +513,7 @@
             transition: opacity 0.15s ease;
         }
 
-        .shape:hover .shape-actions,
-        .shape:focus-within .shape-actions {
+        .shape.selected .shape-actions {
             opacity: 1;
             pointer-events: auto;
         }
@@ -202,13 +603,16 @@
             content: "";
         }
 
-        .shape:hover .handle,
-        .shape:focus-within .handle,
-        .shape.dragging .handle,
-        .shape:hover .link-handle,
-        .shape:focus-within .link-handle,
-        .shape.dragging .link-handle {
+        .shape.selected .handle,
+        .shape.selected .link-handle {
             opacity: 1;
+        }
+
+        .chart.multi-selection .shape .handle,
+        .chart.multi-selection .shape .link-handle,
+        .chart.multi-selection .shape .shape-actions {
+            opacity: 0 !important;
+            pointer-events: none !important;
         }
         .n { left: 50%;  top: 0;    cursor: n-resize; }
         .s { left: 50%;  top: 100%; cursor: s-resize; }
@@ -383,6 +787,12 @@
             user-select: text;
         }
 
+        .program-editor-help {
+            margin: -6px 0 0;
+            color: #64748b;
+            font: 12px/1.4 system-ui, sans-serif;
+        }
+
         .program-editor-actions {
             display: flex;
             justify-content: flex-end;
@@ -446,7 +856,7 @@
         }
 
         .shape.selected {
-            filter: drop-shadow(0 0 1.5px #1d4ed8) drop-shadow(0 0 3px rgba(29, 78, 216, 0.7));
+            filter: drop-shadow(0 0 1px #1d4ed8) drop-shadow(0 0 2px rgba(29, 78, 216, 0.4));
         }
 
         .chart.linking-mode .link-hit,

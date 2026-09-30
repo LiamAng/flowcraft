@@ -20,13 +20,14 @@ export function initSelection(chart: HTMLElement) {
 
     chart.addEventListener("pointerdown", (event: PointerEvent) => {
 
-        if (event.button !== 0 || event.target !== chart || Shape.pendingLink) {
+        if (event.button !== 0 || !(event.target === chart || event.target === Shape.canvas) || Shape.pendingLink) {
             return;
         }
         event.preventDefault();
         (document.activeElement as HTMLElement | null)?.blur();
 
-        const start = page(event);
+        const start = Shape.clientToCanvas(event.clientX, event.clientY);
+        const visualStart = page(event);
         const additive = event.shiftKey;
         const base = additive ? new Set(Shape.selection) : new Set<Shape>();
         let dragging = false;
@@ -36,18 +37,20 @@ export function initSelection(chart: HTMLElement) {
         }
 
         const onMove = (moveEvent: PointerEvent) => {
-            const now = page(moveEvent);
+            const now = Shape.clientToCanvas(moveEvent.clientX, moveEvent.clientY);
             if (!dragging && Math.hypot(now.x - start.x, now.y - start.y) < DRAG_THRESHOLD) {
                 return;
             }
             dragging = true;
 
             const rect = { x0: Math.min(start.x, now.x), y0: Math.min(start.y, now.y), x1: Math.max(start.x, now.x), y1: Math.max(start.y, now.y) };
+            const visualNow = page(moveEvent);
+            const visualRect = { x0: Math.min(visualStart.x, visualNow.x), y0: Math.min(visualStart.y, visualNow.y), x1: Math.max(visualStart.x, visualNow.x), y1: Math.max(visualStart.y, visualNow.y) };
             box.style.display = "block";
-            box.style.left = `${rect.x0}px`;
-            box.style.top = `${rect.y0}px`;
-            box.style.width = `${rect.x1 - rect.x0}px`;
-            box.style.height = `${rect.y1 - rect.y0}px`;
+            box.style.left = `${visualRect.x0}px`;
+            box.style.top = `${visualRect.y0}px`;
+            box.style.width = `${visualRect.x1 - visualRect.x0}px`;
+            box.style.height = `${visualRect.y1 - visualRect.y0}px`;
 
             const picked = new Set(base);
             Shape.all.forEach((shape) => {

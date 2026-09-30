@@ -1,11 +1,17 @@
 import { Shape, Process, Decision, InputOutput, Terminator } from "./shapes";
+import { pickInputOutputType } from "./inputOutputPicker";
 
-type Option = { label: string; icon: string; create: () => Shape };
+type Option = { label: string; icon: string; create: () => Shape; pick?: (x: number, y: number) => Promise<Shape | null> };
 
 const OPTIONS: Option[] = [
     { label: "Process", icon: "process", create: () => new Process() },
     { label: "Decision", icon: "decision", create: () => new Decision() },
-    { label: "Input / Output", icon: "io", create: () => new InputOutput() },
+    {
+        label: "Input / Output",
+        icon: "io",
+        create: () => new InputOutput(),
+        pick: (x, y) => pickInputOutputType(x, y).then((type) => type ? new InputOutput(type) : null),
+    },
 
     { label: "Terminator (End)", icon: "terminator", create: () => new Terminator("end") },
 ];
@@ -21,18 +27,23 @@ export function initLinkPicker(chart: HTMLElement, addShape: (shape: Shape) => S
     menu.appendChild(title);
 
     let anchor = { x: 0, y: 0 };
+    let canvasAnchor = { x: 0, y: 0 };
 
     OPTIONS.forEach((option) => {
         const button = document.createElement("button");
         button.type = "button";
         button.setAttribute("role", "menuitem");
         button.innerHTML = `<span class="pick-icon ${option.icon}"></span><span>${option.label}</span>`;
-        button.addEventListener("click", () => {
+        button.addEventListener("click", async () => {
             if (!Shape.pendingLink) {
                 return;
             }
-            const shape = addShape(option.create());
-            shape.setCenter(anchor.x, anchor.y);
+            const shape = option.pick ? await option.pick(anchor.x, anchor.y) : option.create();
+            if (!shape || !Shape.pendingLink) {
+                return;
+            }
+            addShape(shape);
+            shape.setCenter(canvasAnchor.x, canvasAnchor.y);
             Shape.completeLink(shape);
         });
         menu.appendChild(button);
@@ -51,6 +62,7 @@ export function initLinkPicker(chart: HTMLElement, addShape: (shape: Shape) => S
 
     const open = (x: number, y: number) => {
         anchor = { x, y };
+        canvasAnchor = Shape.clientToCanvas(x, y);
         Shape.freezeGhostAt(x, y);
         menu.classList.add("open");
 
@@ -69,7 +81,7 @@ export function initLinkPicker(chart: HTMLElement, addShape: (shape: Shape) => S
     };
 
     chart.addEventListener("pointerdown", (event: PointerEvent) => {
-        if (!Shape.pendingLink || event.target !== chart) {
+        if (!Shape.pendingLink || !(event.target === chart || event.target === Shape.canvas)) {
             return;
         }
         event.preventDefault();

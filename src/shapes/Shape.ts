@@ -21,6 +21,10 @@ export type LinkRecord = {
 };
 
 export class Shape {
+    public static canvas: HTMLElement | null = null;
+    public static zoom = 1;
+    public static readonly GRID_SIZE = 40;
+    public static readOnly = false;
     public static readonly MIN_DRAG = 20;
     public static readonly MAX_SIZE = 20000;
     public static pendingLink: { source: Shape; direction: LinkDirection } | null = null;
@@ -31,6 +35,9 @@ export class Shape {
     protected static router = new Router();
     public static readonly DEFAULT_SIZE = 80;
     public static ghostLayer: SVGSVGElement | null = null;
+    public static simulationShape: Shape | null = null;
+    public static simulationConnection: LinkRecord | null = null;
+    public static showSimulationFlowline = false;
     protected static pointer = { x: 0, y: 0 };
     protected static hover: Shape | null = null;
     protected static ghostFrozen = false;
@@ -126,12 +133,42 @@ export class Shape {
     public static setSelection(shapes: Iterable<Shape>) {
         Shape.selection = new Set(shapes);
         Shape.all.forEach((shape) => shape.element.classList.toggle("selected", Shape.selection.has(shape)));
+        document.querySelector(".chart")?.classList.toggle("multi-selection", Shape.selection.size > 1);
     }
 
     public static clearSelection() {
         if (Shape.selection.size > 0) {
             Shape.setSelection([]);
         }
+    }
+
+    public static notifyDiagramChange() {
+        document.dispatchEvent(new CustomEvent("flowcraft:diagramchange"));
+    }
+
+    public static setZoom(zoom: number) {
+        Shape.zoom = Math.max(0.5, Math.min(zoom, 2));
+        if (Shape.canvas) {
+            Shape.canvas.style.transform = `scale(${Shape.zoom})`;
+        }
+    }
+
+    public static clientToCanvas(clientX: number, clientY: number): Point {
+        const bounds = Shape.canvas?.getBoundingClientRect();
+        if (!bounds) return { x: clientX, y: clientY };
+        return { x: (clientX - bounds.left) / Shape.zoom, y: (clientY - bounds.top) / Shape.zoom };
+    }
+
+    protected static snap(value: number): number {
+        return Math.round(value / Shape.GRID_SIZE) * Shape.GRID_SIZE;
+    }
+
+    public static setSimulationFocus(shape: Shape | null, connection: LinkRecord | null = null) {
+        Shape.simulationShape?.element.classList.remove("simulation-current");
+        Shape.simulationShape = shape;
+        Shape.simulationConnection = connection;
+        shape?.element.classList.add("simulation-current");
+        Shape.renderConnections();
     }
 
     public static removeShapes(shapes: Iterable<Shape>) {
@@ -146,6 +183,13 @@ export class Shape {
         removed.forEach((shape) => shape.onMouseUp());
 
         const removedConnections = Shape.connections.filter((link) => removed.has(link.from) || removed.has(link.to));
+        if (Shape.simulationShape && removed.has(Shape.simulationShape)) {
+            Shape.simulationShape.element.classList.remove("simulation-current");
+            Shape.simulationShape = null;
+        }
+        if (Shape.simulationConnection && removedConnections.includes(Shape.simulationConnection)) {
+            Shape.simulationConnection = null;
+        }
         Shape.connections = Shape.connections.filter((link) => !removed.has(link.from) && !removed.has(link.to));
         Shape.all = Shape.all.filter((shape) => !removed.has(shape));
         removed.forEach((shape) => shape.element.remove());
@@ -177,11 +221,26 @@ export class Shape {
         } else {
             Shape.renderConnections();
         }
+        Shape.notifyDiagramChange();
     }
 
-    setCenter(x: number, y: number) {
-        this.posX = x - this.width / 2;
-        this.posY = y - this.height / 2;
+    public static replaceConnections(connections: LinkRecord[]) {
+        Shape.connections = connections;
+        Shape.all.forEach((shape) => {
+            shape.outgoingLinks = connections
+                .filter((link) => link.from === shape)
+                .map(({ direction, role, label, to }) => ({ direction, role, label, to }));
+            shape.syncLinkData();
+        });
+        Shape.renderConnections();
+        Shape.notifyDiagramChange();
+    }
+
+    setCenter(x: number, y: number, snapToGrid = true) {
+        const left = x - this.width / 2;
+        const top = y - this.height / 2;
+        this.posX = snapToGrid ? Shape.snap(left) : left;
+        this.posY = snapToGrid ? Shape.snap(top) : top;
         this.apply();
     }
 
@@ -264,6 +323,14 @@ export class Shape {
         return 1;
     }
 
+    public getRequiredOutlinkCount(): number {
+        return this.getLinkLimit();
+    }
+
+    protected getBranchLabel(_role: LinkRole): string {
+        return "";
+    }
+
     protected isProgrammable(): boolean {
         return false;
     }
@@ -308,11 +375,13 @@ export class Shape {
         }
 
         const role: LinkRole = this.outgoingLinks.some((link) => link.role === "next") ? "altNext" : "next";
-        const record: LinkRecord = { from: this, to: target, direction, role, label };
+        const connectionLabel = label || this.getBranchLabel(role);
+        const record: LinkRecord = { from: this, to: target, direction, role, label: connectionLabel };
         Shape.connections.push(record);
-        this.outgoingLinks.push({ direction, role, label, to: target });
+        this.outgoingLinks.push({ direction, role, label: connectionLabel, to: target });
         this.syncLinkData();
         Shape.renderConnections();
+        Shape.notifyDiagramChange();
     }
 
     public static removeConnection(connection: LinkRecord) {
@@ -328,6 +397,7 @@ export class Shape {
         }
         connection.from.syncLinkData();
         Shape.renderConnections();
+        Shape.notifyDiagramChange();
     }
 
     protected onLink(direction: LinkDirection) {
@@ -384,7 +454,7 @@ export class Shape {
     public static freezeGhostAt(x: number, y: number) {
         Shape.hover?.element.classList.remove("link-target");
         Shape.hover = null;
-        Shape.pointer = { x, y };
+        Shape.pointer = Shape.clientToCanvas(x, y);
         Shape.ghostFrozen = true;
         Shape.renderGhost();
     }
@@ -426,7 +496,7 @@ export class Shape {
                 return;
             }
 
-            Shape.pointer = { x: event.clientX, y: event.clientY };
+            Shape.pointer = Shape.clientToCanvas(event.clientX, event.clientY);
             const el = event.target instanceof Element ? event.target.closest(".shape") : null;
             const hovered = el ? Shape.all.find((shape) => shape.element === el && shape !== pending.source) ?? null : null;
 
@@ -584,6 +654,37 @@ export class Shape {
         return shape.getEdgePoint(direction);
     }
 
+    protected static getWaypointCorner(points: Point[], waypoint: Waypoint, centre: Point): Point | null {
+        const target = { x: centre.x + waypoint.ox, y: centre.y + waypoint.oy };
+        const horizontal = waypoint.dir === "e" || waypoint.dir === "w";
+        const candidates: Point[] = [];
+
+        for (let i = 1; i < points.length - 1; i++) {
+            const corner = points[i];
+            const previous = points[i - 1];
+            const next = points[i + 1];
+            const firstHorizontal = Math.abs(previous.y - corner.y) < 0.01;
+            const secondHorizontal = Math.abs(corner.y - next.y) < 0.01;
+            if (firstHorizontal === secondHorizontal || firstHorizontal !== horizontal && secondHorizontal !== horizontal) {
+                continue;
+            }
+
+            const onAlignedSegment = (a: Point, b: Point) => horizontal
+                ? Math.abs(a.y - target.y) < 1.5 && Math.abs(b.y - target.y) < 1.5 && target.x >= Math.min(a.x, b.x) - 1.5 && target.x <= Math.max(a.x, b.x) + 1.5
+                : Math.abs(a.x - target.x) < 1.5 && Math.abs(b.x - target.x) < 1.5 && target.y >= Math.min(a.y, b.y) - 1.5 && target.y <= Math.max(a.y, b.y) + 1.5;
+
+            if (onAlignedSegment(previous, corner) || onAlignedSegment(corner, next)) {
+                candidates.push(corner);
+            }
+        }
+
+        return candidates.reduce<Point | null>((nearest, corner) =>
+            !nearest || Math.hypot(corner.x - target.x, corner.y - target.y) < Math.hypot(nearest.x - target.x, nearest.y - target.y)
+                ? corner
+                : nearest,
+        null);
+    }
+
     protected static ensureLayers(chart: HTMLElement) {
         if (!Shape.linkLayer) {
             const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
@@ -593,14 +694,14 @@ export class Shape {
             svg.style.pointerEvents = "none";
             svg.style.overflow = "visible";
             Shape.linkLayer = svg;
-            chart.appendChild(svg);
+            (Shape.canvas ?? chart).appendChild(svg);
         }
 
         if (!Shape.labelLayer) {
             const layer = document.createElement("div");
             layer.className = "link-label-layer";
             Shape.labelLayer = layer;
-            chart.appendChild(layer);
+            (Shape.canvas ?? chart).appendChild(layer);
         }
 
         if (!Shape.deleteHooked) {
@@ -617,7 +718,7 @@ export class Shape {
                 true
             );
             document.addEventListener("keydown", (event: KeyboardEvent) => {
-                if ((event.key !== "Delete" && event.key !== "Backspace") || !Shape.selectedLink) {
+                if (Shape.readOnly || (event.key !== "Delete" && event.key !== "Backspace") || !Shape.selectedLink) {
                     return;
                 }
                 const active = document.activeElement as HTMLElement | null;
@@ -637,7 +738,7 @@ export class Shape {
             svg.style.pointerEvents = "none";
             svg.style.overflow = "visible";
             Shape.ghostLayer = svg;
-            chart.appendChild(svg);
+            (Shape.canvas ?? chart).appendChild(svg);
         }
     }
 
@@ -728,6 +829,8 @@ export class Shape {
             if (Shape.draggingLink === link || Shape.selectedLink === link) {
                 highlight(true);
             }
+
+            path.classList.toggle("simulation-flowline", Shape.showSimulationFlowline && Shape.simulationConnection === link);
             svg.appendChild(path);
 
             for (let seg = 0; seg < points.length - 1; seg++) {
@@ -761,10 +864,14 @@ export class Shape {
             if (Shape.selectedLink === link) {
                 const centre = link.from.getCenter();
                 (link.waypoints ?? []).forEach((waypoint, waypointIndex) => {
+                    const position = Shape.getWaypointCorner(points, waypoint, centre);
+                    if (!position) {
+                        return;
+                    }
                     const corner = document.createElementNS("http://www.w3.org/2000/svg", "circle");
                     corner.setAttribute("class", "link-turn");
-                    corner.setAttribute("cx", `${centre.x + waypoint.ox}`);
-                    corner.setAttribute("cy", `${centre.y + waypoint.oy}`);
+                    corner.setAttribute("cx", `${position.x}`);
+                    corner.setAttribute("cy", `${position.y}`);
                     corner.setAttribute("r", "7");
                     corner.setAttribute("role", "button");
                     corner.setAttribute("tabindex", "0");
@@ -795,7 +902,7 @@ export class Shape {
             const mid = labelPoint(points);
             const label = document.createElement("div");
             label.className = "link-label";
-            label.setAttribute("contenteditable", "true");
+            label.setAttribute("contenteditable", String(!Shape.readOnly));
             label.setAttribute("spellcheck", "false");
             label.textContent = link.label || "";
             label.style.left = `${mid.x}px`;
@@ -820,7 +927,7 @@ export class Shape {
     }
 
     protected static beginLineDrag(link: LinkRecord, points: Point[], seg: number, event: PointerEvent) {
-        if (event.button !== 0 || Shape.pendingLink) {
+        if (Shape.readOnly || event.button !== 0 || Shape.pendingLink) {
             return;
         }
         event.preventDefault();
@@ -856,14 +963,14 @@ export class Shape {
             return at >= 0 && at < seg;
         }).length : index;
 
-        const startX = event.clientX;
-        const startY = event.clientY;
+        const start = Shape.clientToCanvas(event.clientX, event.clientY);
         let moved = false;
         const previousCursor = document.body.style.cursor;
 
         const onMove = (moveEvent: PointerEvent) => {
-            const dx = moveEvent.clientX - startX;
-            const dy = moveEvent.clientY - startY;
+            const current = Shape.clientToCanvas(moveEvent.clientX, moveEvent.clientY);
+            const dx = current.x - start.x;
+            const dy = current.y - start.y;
             if (!moved && Math.hypot(dx, dy) < 3) {
                 return;
             }
@@ -987,16 +1094,16 @@ export class Shape {
         handle.setPointerCapture(event.pointerId);
         this.element.classList.add("dragging");
 
-        const startX = event.clientX;
-        const startY = event.clientY;
+        const start = Shape.clientToCanvas(event.clientX, event.clientY);
         const startLeft = this.posX;
         const startTop = this.posY;
         const startWidth = this.width;
         const startHeight = this.height;
 
         const onMove = (moveEvent: PointerEvent) => {
-            const dx = moveEvent.clientX - startX;
-            const dy = moveEvent.clientY - startY;
+            const current = Shape.clientToCanvas(moveEvent.clientX, moveEvent.clientY);
+            const dx = current.x - start.x;
+            const dy = current.y - start.y;
 
             let nextWidth = startWidth;
             let nextHeight = startHeight;
@@ -1059,7 +1166,7 @@ export class Shape {
     }
 
     onMouseDown(event: MouseEvent) {
-        if (!this.draggable) {
+        if (Shape.readOnly || !this.draggable) {
             return;
         }
 
@@ -1069,7 +1176,8 @@ export class Shape {
             return;
         }
 
-        if (event.clientX >= this.posX + size.x && event.clientY >= this.posY + size.y) {
+        const point = Shape.clientToCanvas(event.clientX, event.clientY);
+        if (point.x >= this.posX + size.x && point.y >= this.posY + size.y) {
             return;
         }
 
@@ -1085,20 +1193,20 @@ export class Shape {
         }
 
         if (!Shape.selection.has(this)) {
-            Shape.clearSelection();
+            Shape.setSelection([this]);
         }
 
         this.isDragging = true;
-        this.dragOffsetX = event.clientX - this.posX;
-        this.dragOffsetY = event.clientY - this.posY;
+        this.dragOffsetX = point.x - this.posX;
+        this.dragOffsetY = point.y - this.posY;
 
         if (Shape.selection.size > 1) {
 
             event.preventDefault();
             Shape.groupDrag = {
                 leader: this,
-                startX: event.clientX,
-                startY: event.clientY,
+                startX: point.x,
+                startY: point.y,
                 origins: new Map([...Shape.selection].map((shape) => [shape, { x: shape.posX, y: shape.posY }])),
             };
         }
@@ -1113,8 +1221,9 @@ export class Shape {
         if (group && group.leader === this) {
             const chart = document.querySelector(".chart") as HTMLElement | null;
             const bounds = chart ?? document.body;
-            let dx = event.clientX - group.startX;
-            let dy = event.clientY - group.startY;
+            const point = Shape.clientToCanvas(event.clientX, event.clientY);
+            let dx = Shape.snap(point.x - group.startX);
+            let dy = Shape.snap(point.y - group.startY);
 
             group.origins.forEach((origin, shape) => {
                 dx = Math.max(-origin.x, Math.min(dx, bounds.clientWidth - shape.width - origin.x));
@@ -1134,8 +1243,9 @@ export class Shape {
         }
 
         const size = this.getSize();
-        this.posX = this.clampPosition(event.clientX - this.dragOffsetX, size.x);
-        this.posY = this.clampPosition(event.clientY - this.dragOffsetY, size.y);
+        const point = Shape.clientToCanvas(event.clientX, event.clientY);
+        this.posX = this.clampPosition(Shape.snap(point.x - this.dragOffsetX), size.x);
+        this.posY = this.clampPosition(Shape.snap(point.y - this.dragOffsetY), size.y);
         this.apply();
         this.element.style.cursor = "grabbing";
     }
@@ -1158,15 +1268,30 @@ export class Shape {
         this.content = document.createElement("div");
         this.content.classList.add("content");
         this.content.innerHTML = "<br>";
-        this.content.contentEditable = "true";
+        this.content.contentEditable = "false";
         this.content.setAttribute("spellcheck", "false");
         this.element.appendChild(this.content);
+        this.content.addEventListener("dblclick", (event) => {
+            if (Shape.readOnly) {
+                return;
+            }
+            event.stopPropagation();
+            this.content.contentEditable = "true";
+            this.content.focus();
+        });
+        this.content.addEventListener("blur", () => {
+            this.content.contentEditable = "false";
+        });
 
         this.getResizeDirections().forEach((direction) => {
             const handle = document.createElement("div");
             handle.classList.add("handle", direction);
             handle.setAttribute("data-dir", direction);
-            handle.addEventListener("pointerdown", (event: PointerEvent) => this.handleResize(direction, handle, event));
+            handle.addEventListener("pointerdown", (event: PointerEvent) => {
+                if (!Shape.readOnly) {
+                    this.handleResize(direction, handle, event);
+                }
+            });
             this.element.appendChild(handle);
         });
 
@@ -1177,9 +1302,12 @@ export class Shape {
             linkHandle.setAttribute("data-link-dir", direction);
             linkHandle.title = `Link ${direction}`;
             linkHandle.addEventListener("pointerdown", (event: PointerEvent) => {
+                if (Shape.readOnly) {
+                    return;
+                }
                 event.preventDefault();
                 event.stopPropagation();
-                Shape.pointer = { x: event.clientX, y: event.clientY };
+                Shape.pointer = Shape.clientToCanvas(event.clientX, event.clientY);
                 this.onLink(direction);
             });
             this.element.appendChild(linkHandle);
@@ -1197,6 +1325,9 @@ export class Shape {
             programButton.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5-6 7 6 7M16 5l6 7-6 7M14 3l-4 18"/></svg>';
             programButton.addEventListener("click", (event) => {
                 event.stopPropagation();
+                if (Shape.readOnly) {
+                    return;
+                }
                 openProgramEditor(this);
             });
             programButton.addEventListener("pointerdown", (event) => event.stopPropagation());
@@ -1212,7 +1343,9 @@ export class Shape {
         deleteButton.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2m3 0-1 14H6L5 6m4 4v6m6-6v6"/></svg>';
         deleteButton.addEventListener("click", (event) => {
             event.stopPropagation();
-            Shape.removeShapes([this]);
+            if (!Shape.readOnly) {
+                Shape.removeShapes([this]);
+            }
         });
         deleteButton.addEventListener("pointerdown", (event) => event.stopPropagation());
         deleteButton.addEventListener("mousedown", (event) => event.stopPropagation());
@@ -1244,10 +1377,14 @@ export class Shape {
         this.apply();
 
         this.content.addEventListener("input", () => {
+            if (Shape.readOnly) {
+                return;
+            }
             if (this.content.innerHTML.trim() === "") {
                 this.content.innerHTML = "<br>";
             }
             this.fit();
+            Shape.notifyDiagramChange();
         });
 
         Shape.renderConnections();
