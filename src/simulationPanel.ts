@@ -203,8 +203,8 @@ export function initSimulationPanel() {
     runWithoutInputsButton.textContent = "Run without predefined inputs";
     const showInputsButton = document.createElement("button");
     showInputsButton.type = "button";
-    showInputsButton.textContent = "Show predefined inputs";
-    showInputsButton.setAttribute("aria-expanded", "false");
+    showInputsButton.textContent = "Hide predefined inputs";
+    showInputsButton.setAttribute("aria-expanded", "true");
     const status = document.createElement("span");
     status.className = "simulation-status";
     status.setAttribute("role", "status");
@@ -213,7 +213,7 @@ export function initSimulationPanel() {
 
     const inputsPreview = document.createElement("div");
     inputsPreview.className = "simulation-input-preview";
-    inputsPreview.hidden = true;
+    inputsPreview.hidden = false;
     inputsPreview.setAttribute("aria-label", "Predefined simulation inputs");
     const renderInputsPreview = () => {
         inputsPreview.replaceChildren();
@@ -231,6 +231,7 @@ export function initSimulationPanel() {
             inputsPreview.appendChild(line);
         });
     };
+    renderInputsPreview();
     showInputsButton.addEventListener("click", () => {
         const visible = inputsPreview.hidden;
         inputsPreview.hidden = !visible;
@@ -347,13 +348,21 @@ export function initSimulationPanel() {
                 const step = document.createElement("th");
                 step.scope = "row";
                 const stepRange = row.step === row.stepEnd ? String(row.step) : `${row.step}-${row.stepEnd}`;
+                const shapeContent = row.shape.content.innerText.trim();
+                const processLines = shapeContent.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+                const processLabel = processLines.join("; ");
                 const stepLabel = row.shape instanceof Decision
                     ? "Condition"
                     : row.shape instanceof Initialization
                         ? "Initialization"
+                    : settings.showShapeContentInSteps && row.shape instanceof Process
+                        ? processLabel.length <= 50 ? processLabel || stepRange : processLines.join("\n") || stepRange
                     : settings.showShapeContentInSteps
-                        ? row.shape.content.innerText.trim() || stepRange
+                        ? shapeContent || stepRange
                         : stepRange;
+                if (row.shape instanceof Process && stepLabel.includes("\n")) {
+                    step.classList.add("simulation-step-content-multiline");
+                }
                 step.textContent = stepLabel;
                 tr.appendChild(step);
             }
