@@ -1,5 +1,5 @@
 import { Simulator } from "./simulator";
-import { Decision, Shape, Terminator, InputOutput, type LinkRecord } from "./shapes";
+import { Decision, Initialization, Shape, Terminator, InputOutput, type LinkRecord, type VariableDefinition } from "./shapes";
 import { Process } from "./shapes/Process";
 import { validateFlowchart } from "./flowValidation";
 import { applySettings, settings } from "./settings";
@@ -12,16 +12,15 @@ type SimulationRow = {
     output: unknown;
 };
 
-const INPUT_NAME = /^[A-Za-z_$][\w$]*$/;
 const MAX_STEPS = 10000;
 type InputDialogResult = { cancelled: true } | { cancelled: false; values: Record<string, unknown> };
 
-function parseInputNames(code: string, shapeId: string): string[] {
-    const names = code.split(",").map((name) => name.trim());
-    if (!code.trim() || names.some((name) => !INPUT_NAME.test(name)) || new Set(names).size !== names.length) {
-        throw new Error(`Set one or more unique, valid variable names separated by commas in the code for Input ${shapeId}.`);
-    }
-    return names;
+function inputVariables(shape: InputOutput): VariableDefinition[] {
+    if (shape.variables.length > 0) return shape.variables;
+    return shape.programCode.split(",").map((name) => ({
+        name: name.trim(),
+        type: "string" as const,
+    })).filter((variable) => variable.name);
 }
 
 function display(value: unknown, accuracy: number): string {
@@ -49,14 +48,6 @@ function columnColor(name: string): string {
     return `hsl(${Math.abs(hash) % 360} 75% 92%)`;
 }
 
-function parseInputValue(value: string): unknown {
-    try {
-        return JSON.parse(value);
-    } catch {
-        return value;
-    }
-}
-
 function createInputDialog() {
     const dialog = document.createElement("dialog");
     dialog.className = "simulation-input-dialog";
@@ -77,14 +68,14 @@ function createInputDialog() {
     dialog.appendChild(form);
     document.body.appendChild(dialog);
 
-    const request = (names: string[]): Promise<InputDialogResult> => new Promise((resolve) => {
-        title.textContent = names.length === 1 ? `Input: ${names[0]}` : "Enter input values";
+    const request = (variables: VariableDefinition[]): Promise<InputDialogResult> => new Promise((resolve) => {
+        title.textContent = variables.length === 1 ? `Input: ${variables[0].name}` : "Enter input values";
         fields.replaceChildren();
-        const inputs = names.map((name) => {
+        const inputs = variables.map(({ name, type }) => {
             const label = document.createElement("label");
             label.textContent = name;
             const input = document.createElement("input");
-            input.type = "text";
+            input.type = type === "number" ? "number" : "text";
             input.autocomplete = "off";
             input.name = name;
             label.appendChild(input);
@@ -100,7 +91,20 @@ function createInputDialog() {
         cancel.onclick = () => finish({ cancelled: true });
         form.onsubmit = (event) => {
             event.preventDefault();
-            const values = Object.fromEntries(inputs.map((input) => [input.name, parseInputValue(input.value)]));
+            const values = Object.fromEntries(inputs.map((input, index) => [
+                input.name,
+                variables[index].type === "number" ? Number(input.value) : input.value,
+            ]));
+            const invalidNumber = inputs.find((input, index) =>
+                variables[index].type === "number" && (!input.value.trim() || !Number.isFinite(Number(input.value)))
+            );
+            if (invalidNumber) {
+                invalidNumber.focus();
+                invalidNumber.setCustomValidity("Enter a valid number.");
+                invalidNumber.reportValidity();
+                invalidNumber.addEventListener("input", () => invalidNumber.setCustomValidity(""), { once: true });
+                return;
+            }
             finish({ cancelled: false, values });
         };
         dialog.addEventListener("close", onClose, { once: true });
@@ -129,15 +133,28 @@ export function initSimulationPanel() {
     const collapseButton = document.createElement("button");
     collapseButton.type = "button";
     collapseButton.className = "simulation-collapse";
-    collapseButton.textContent = "Collapse";
-    collapseButton.setAttribute("aria-expanded", "true");
-    collapseButton.setAttribute("aria-label", "Collapse simulation panel");
+    collapseButton.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 10 5 5 5-5"/></svg>';
+    collapseButton.setAttribute("aria-expanded", "false");
+    collapseButton.setAttribute("aria-label", "Hide simulation buttons");
     collapseButton.addEventListener("click", () => {
-        const collapsed = document.documentElement.classList.toggle("simulation-collapsed");
-        collapseButton.textContent = collapsed ? "Expand" : "Collapse";
+        const collapsed = document.documentElement.classList.toggle("simulation-controls-collapsed");
         collapseButton.setAttribute("aria-expanded", String(!collapsed));
-        collapseButton.setAttribute("aria-label", `${collapsed ? "Expand" : "Collapse"} simulation panel`);
+        collapseButton.setAttribute("aria-label", `${collapsed ? "Show" : "Hide"} simulation buttons`);
+        collapseButton.title = `${collapsed ? "Show" : "Hide"} simulation buttons`;
+        collapseButton.innerHTML = collapsed
+            ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 14 5-5 5 5"/></svg>'
+            : '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 10 5 5 5-5"/></svg>';
     });
+    const setControlsCollapsed = (collapsed: boolean) => {
+        document.documentElement.classList.toggle("simulation-controls-collapsed", collapsed);
+        collapseButton.setAttribute("aria-expanded", String(!collapsed));
+        collapseButton.setAttribute("aria-label", `${collapsed ? "Show" : "Hide"} simulation buttons`);
+        collapseButton.title = `${collapsed ? "Show" : "Hide"} simulation buttons`;
+        collapseButton.innerHTML = collapsed
+            ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 14 5-5 5 5"/></svg>'
+            : '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 10 5 5 5-5"/></svg>';
+    };
+    setControlsCollapsed(settings.autorun);
     header.append(heading, collapseButton);
 
     const controls = document.createElement("div");
@@ -154,7 +171,6 @@ export function initSimulationPanel() {
     const resetButton = document.createElement("button");
     resetButton.type = "button";
     resetButton.textContent = "Reset";
-
     const status = document.createElement("span");
     status.className = "simulation-status";
     status.setAttribute("role", "status");
@@ -236,7 +252,7 @@ export function initSimulationPanel() {
         const decisionShapes = Shape.all.filter((shape) => shape instanceof Decision);
         const head = document.createElement("thead");
         const headerRow = document.createElement("tr");
-        ["Step", ...variableNames, ...decisionShapes.map((shape) => `Condition: ${shape.content.textContent?.trim() || shape.id}`), "Output"].forEach((title, index, all) => {
+        [ ...(settings.showStepNumbers ? ["Step"] : []), ...variableNames, ...decisionShapes.map((shape) => `Condition: ${shape.content.textContent?.trim() || shape.id}`), "Output"].forEach((title, index, all) => {
             const cell = document.createElement("th");
             cell.textContent = title;
             if (index > 0 && index < all.length - 1) cell.style.backgroundColor = columnColor(title);
@@ -248,10 +264,12 @@ export function initSimulationPanel() {
         const body = document.createElement("tbody");
         rows.forEach((row) => {
             const tr = document.createElement("tr");
-            const step = document.createElement("th");
-            step.scope = "row";
-            step.textContent = `${row.step}. ${row.shape.content.textContent?.trim() || row.shape.id}`;
-            tr.appendChild(step);
+            if (settings.showStepNumbers) {
+                const step = document.createElement("th");
+                step.scope = "row";
+                step.textContent = String(row.step);
+                tr.appendChild(step);
+            }
             variableNames.forEach((name) => {
                 const cell = document.createElement("td");
                 cell.textContent = display(row.variables[name], settings.valueAccuracy);
@@ -284,6 +302,7 @@ export function initSimulationPanel() {
     const setError = (error: unknown) => {
         status.textContent = error instanceof Error ? error.message : "Simulation failed.";
         status.classList.add("error");
+        Shape.setSimulationFocus(null);
     };
 
     const setStatus = (message: string) => {
@@ -321,20 +340,23 @@ export function initSimulationPanel() {
         const shape = current;
         let condition: boolean | undefined;
         if (shape instanceof InputOutput && shape.inputOutputType === "input") {
-            const names = parseInputNames(shape.programCode, shape.id);
+            const variables = inputVariables(shape);
+            if (variables.length === 0) throw new Error(`Add at least one variable to Input ${shape.id}.`);
             const inputValues = settings.inputs;
-            const missingNames = names.filter((name) => !Object.prototype.hasOwnProperty.call(inputValues, name));
+            const missingVariables = variables.filter(({ name }) => !Object.prototype.hasOwnProperty.call(inputValues, name));
             let enteredValues: Record<string, unknown> = {};
-            if (missingNames.length > 0) {
-                const entered = await requestInput(missingNames);
+            if (missingVariables.length > 0) {
+                const entered = await requestInput(missingVariables);
                 if (entered.cancelled) {
                     setStatus("Input cancelled");
+                    Shape.setSimulationFocus(null);
                     return false;
                 }
                 enteredValues = entered.values;
             }
-            names.forEach((name) => {
-                simulator.getScope()[name] = Object.prototype.hasOwnProperty.call(inputValues, name) ? inputValues[name] : enteredValues[name];
+            variables.forEach(({ name, type }) => {
+                const value = Object.prototype.hasOwnProperty.call(inputValues, name) ? inputValues[name] : enteredValues[name];
+                simulator.getScope()[name] = type === "number" ? Number(value) : String(value);
             });
         } else if (shape instanceof Decision) {
             if (!shape.programCode.trim()) throw new Error(`Enter a true/false expression in Decision ${shape.id}'s code.`);
@@ -345,6 +367,12 @@ export function initSimulationPanel() {
             wholeOutput.push(lastOutput);
         } else if (shape instanceof Process && shape.programCode.trim()) {
             simulator.exec(shape.programCode);
+        } else if (shape instanceof Initialization) {
+            if (shape.variables.length === 0) throw new Error(`Add at least one variable to Initialization ${shape.id}.`);
+            shape.variables.forEach(({ name, type, value }) => {
+                if (value === undefined || value === "") throw new Error(`Set an initial value for ${name} in Initialization ${shape.id}.`);
+                simulator.getScope()[name] = type === "number" ? Number(value) : String(value);
+            });
         }
 
         if (!(shape instanceof Terminator)) {
@@ -373,6 +401,7 @@ export function initSimulationPanel() {
         if (!current) {
             setStatus("Finished");
             renderWholeOutput();
+            Shape.setSimulationFocus(null);
             return false;
         }
         setStatus(`Step ${rows.length}`);
@@ -424,10 +453,15 @@ export function initSimulationPanel() {
 
     const autorun = () => {
         if (!settings.autorun) return;
+        setControlsCollapsed(true);
         try {
             const inputValues = settings.inputs;
-            const inputs = Shape.all.filter((shape) => shape instanceof InputOutput && shape.inputOutputType === "input");
-            const missing = inputs.flatMap((shape) => parseInputNames(shape.programCode, shape.id).filter((name) => !Object.prototype.hasOwnProperty.call(inputValues, name)));
+            const inputs = Shape.all.filter((shape): shape is InputOutput =>
+                shape instanceof InputOutput && shape.inputOutputType === "input"
+            );
+            const missing = inputs.flatMap((shape) => inputVariables(shape).filter(({ name }) =>
+                !Object.prototype.hasOwnProperty.call(inputValues, name)
+            ).map(({ name }) => name));
             if (missing.length > 0) {
                 throw new Error(`Autorun requires simulation inputs in settings for: ${[...new Set(missing)].join(", ")}.`);
             }

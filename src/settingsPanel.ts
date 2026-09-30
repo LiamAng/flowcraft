@@ -43,7 +43,7 @@ export function initSettingsPanel(fileActions: { exportDiagram: () => void; impo
     error.className = "settings-error";
     error.hidden = true;
 
-    const checkbox = (key: "snap" | "guides" | "showGrid" | "readOnly" | "showSteps" | "autorun", text: string) => {
+    const checkbox = (key: "snap" | "guides" | "showGrid" | "readOnly" | "showSteps" | "showStepNumbers" | "autorun", text: string) => {
         const label = document.createElement("label");
         label.className = "settings-check";
         const input = document.createElement("input");
@@ -57,6 +57,7 @@ export function initSettingsPanel(fileActions: { exportDiagram: () => void; impo
         checkbox("guides", "Snap to other shapes and show alignment guides"),
         checkbox("showGrid", "Show grid"),
         checkbox("showSteps", "Highlight the active flowline during simulation"),
+        checkbox("showStepNumbers", "Show step numbers in simulation"),
         checkbox("autorun", "Run simulation automatically on load"),
         checkbox("readOnly", "Read only"),
     ];
@@ -113,12 +114,57 @@ export function initSettingsPanel(fileActions: { exportDiagram: () => void; impo
     });
     speedLabel.appendChild(speedInput);
 
-    const inputsLabel = document.createElement("label");
-    inputsLabel.textContent = "Simulation inputs (JSON object)";
-    const inputsArea = document.createElement("textarea");
-    inputsArea.spellcheck = false;
-    inputsArea.className = "settings-inputs";
-    inputsLabel.appendChild(inputsArea);
+    const inputsLabel = document.createElement("div");
+    inputsLabel.className = "settings-variable-section";
+    const inputsHeading = document.createElement("strong");
+    inputsHeading.textContent = "Simulation inputs";
+    const inputsArea = document.createElement("div");
+    inputsArea.className = "settings-variable-list";
+    const addInput = document.createElement("button");
+    addInput.type = "button";
+    addInput.textContent = "Add input";
+    const inputRows: Array<{ row: HTMLDivElement; name: HTMLInputElement; type: HTMLSelectElement; value: HTMLInputElement }> = [];
+    const addInputRow = (nameValue = "", rawValue: unknown = "") => {
+        const row = document.createElement("div");
+        row.className = "settings-variable-row";
+        const name = document.createElement("input");
+        name.type = "text";
+        name.placeholder = "Variable name";
+        name.value = nameValue;
+        name.setAttribute("aria-label", "Input variable name");
+        const type = document.createElement("select");
+        type.setAttribute("aria-label", "Input variable type");
+        const isNumber = typeof rawValue === "number";
+        [{ value: "string", text: "String" }, { value: "number", text: "Number" }].forEach(({ value, text }) => {
+            const option = document.createElement("option");
+            option.value = value;
+            option.textContent = text;
+            type.appendChild(option);
+        });
+        type.value = isNumber ? "number" : "string";
+        const value = document.createElement("input");
+        value.type = type.value === "number" ? "number" : "text";
+        value.value = rawValue === undefined ? "" : String(rawValue);
+        value.placeholder = "Value";
+        value.setAttribute("aria-label", "Input value");
+        type.addEventListener("change", () => {
+            value.type = type.value === "number" ? "number" : "text";
+            if (type.value === "number" && !value.value) value.value = "0";
+        });
+        const remove = document.createElement("button");
+        remove.type = "button";
+        remove.textContent = "Remove";
+        remove.addEventListener("click", () => {
+            row.remove();
+            const index = inputRows.findIndex((item) => item.row === row);
+            if (index >= 0) inputRows.splice(index, 1);
+        });
+        row.append(name, type, value, remove);
+        inputsArea.appendChild(row);
+        inputRows.push({ row, name, type, value });
+    };
+    addInput.addEventListener("click", () => addInputRow());
+    inputsLabel.append(inputsHeading, inputsArea, addInput);
 
     const actionBar = document.createElement("div");
     actionBar.className = "program-editor-actions";
@@ -159,7 +205,9 @@ export function initSettingsPanel(fileActions: { exportDiagram: () => void; impo
         ratioInput.value = String(Math.round(values.simulationRatio * 100));
         accuracyInput.value = String(values.valueAccuracy);
         speedInput.value = String(values.simulationStepDelay);
-        inputsArea.value = JSON.stringify(values.inputs, null, 2);
+        inputsArea.replaceChildren();
+        inputRows.length = 0;
+        Object.entries(values.inputs).forEach(([name, value]) => addInputRow(name, value));
         error.hidden = true;
     };
 
@@ -171,16 +219,29 @@ export function initSettingsPanel(fileActions: { exportDiagram: () => void; impo
     cancel.addEventListener("click", () => dialog.close());
     form.addEventListener("submit", (event) => {
         event.preventDefault();
-        let inputs: unknown;
-        try {
-            inputs = inputsArea.value.trim() ? JSON.parse(inputsArea.value) : {};
-        } catch {
-            inputs = null;
-        }
-        if (!inputs || typeof inputs !== "object" || Array.isArray(inputs)) {
-            error.textContent = "Inputs must be a JSON object, for example {\"count\": 3}.";
-            error.hidden = false;
-            return;
+        const inputs: Record<string, unknown> = {};
+        for (const row of inputRows) {
+            const name = row.name.value.trim();
+            if (!/^[A-Za-z_$][\w$]*$/.test(name) || Object.prototype.hasOwnProperty.call(inputs, name)) {
+                error.textContent = "Input variable names must be valid, unique identifiers.";
+                error.hidden = false;
+                row.name.focus();
+                return;
+            }
+            if (row.type.value === "number" && !row.value.value.trim()) {
+                error.textContent = `Enter a value for ${name}.`;
+                error.hidden = false;
+                row.value.focus();
+                return;
+            }
+            const value = row.type.value === "number" ? Number(row.value.value) : row.value.value;
+            if (typeof value === "number" && !Number.isFinite(value)) {
+                error.textContent = `Enter a valid number for ${name}.`;
+                error.hidden = false;
+                row.value.focus();
+                return;
+            }
+            inputs[name] = value;
         }
         const gridSize = Number(gridInput.value);
         if (!Number.isFinite(gridSize) || gridSize < 5 || gridSize > 200) {
@@ -203,7 +264,7 @@ export function initSettingsPanel(fileActions: { exportDiagram: () => void; impo
             simulationRatio,
             valueAccuracy: Number(accuracyInput.value),
             simulationStepDelay: Number(speedInput.value),
-            inputs: inputs as Record<string, unknown>,
+            inputs,
         });
         dialog.close();
     });

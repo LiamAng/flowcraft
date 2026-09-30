@@ -8,6 +8,11 @@ export type LinkDirection = "n" | "s" | "e" | "w";
 export type LinkRole = "next" | "altNext";
 
 export type Waypoint = { ox: number; oy: number; dir: LinkDirection };
+export type VariableDefinition = {
+    name: string;
+    type: "number" | "string";
+    value?: number | string;
+};
 
 export type LinkRecord = {
     from: Shape;
@@ -70,6 +75,7 @@ export class Shape {
     public posY = 0;
     public outgoingLinks: Array<{ direction: LinkDirection; role: LinkRole; label: string; to: Shape }> = [];
     public programCode = "";
+    public variables: VariableDefinition[] = [];
 
     get next(): Shape | null {
         return this.outgoingLinks.find((link) => link.role === "next")?.to ?? null;
@@ -1486,9 +1492,9 @@ export class Shape {
             const programButton = document.createElement("button");
             programButton.type = "button";
             programButton.className = "shape-action";
-            programButton.title = "Edit code";
-            programButton.setAttribute("aria-label", "Edit shape code");
-            programButton.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5-6 7 6 7M16 5l6 7-6 7M14 3l-4 18"/></svg>';
+            programButton.title = "Edit shape";
+            programButton.setAttribute("aria-label", "Edit shape");
+            programButton.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16M4 12h16M4 19h16M8 3v4m8 3v4m-6 3v4"/></svg>';
             programButton.addEventListener("click", (event) => {
                 event.stopPropagation();
                 if (Shape.readOnly) {

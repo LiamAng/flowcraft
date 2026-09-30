@@ -1,7 +1,7 @@
 import { applySettings, defaultSettings, sanitizeSettings, snapshotSettings, type Settings } from "./settings";
-import { Decision, InputOutput, Process, Shape, Terminator, type LinkDirection, type LinkRecord, type LinkRole, type Waypoint } from "./shapes";
+import { Decision, Initialization, InputOutput, Process, Shape, Terminator, type LinkDirection, type LinkRecord, type LinkRole, type VariableDefinition, type Waypoint } from "./shapes";
 
-type ShapeType = "process" | "decision" | "input-output" | "terminator";
+type ShapeType = "process" | "decision" | "input-output" | "initialization" | "terminator";
 
 type SavedShape = {
     id: string;
@@ -14,6 +14,7 @@ type SavedShape = {
     programCode: string;
     terminatorType?: "start" | "end";
     inputOutputType?: "input" | "output";
+    variables?: VariableDefinition[];
 };
 
 type SavedConnection = {
@@ -58,11 +59,18 @@ function parseDiagram(json: string): DiagramFile {
         const shape = value as SavedShape;
         if (
             typeof shape.id !== "string" || !shape.id || ids.has(shape.id) ||
-            !["process", "decision", "input-output", "terminator"].includes(shape.type) ||
+            !["process", "decision", "input-output", "initialization", "terminator"].includes(shape.type) ||
             !Number.isFinite(shape.x) || !Number.isFinite(shape.y) ||
             (shape.width !== undefined && (!Number.isFinite(shape.width) || shape.width < Shape.MIN_DRAG || shape.width > Shape.MAX_SIZE)) ||
             (shape.height !== undefined && (!Number.isFinite(shape.height) || shape.height < Shape.MIN_DRAG || shape.height > Shape.MAX_SIZE)) ||
-            typeof shape.text !== "string" || typeof shape.programCode !== "string"
+            typeof shape.text !== "string" || typeof shape.programCode !== "string" ||
+            (shape.variables !== undefined && (!Array.isArray(shape.variables) || shape.variables.some((variable) =>
+                !variable || typeof variable.name !== "string" ||
+                !/^[A-Za-z_$][\w$]*$/.test(variable.name) ||
+                (variable.type !== "number" && variable.type !== "string") ||
+                (variable.value !== undefined && typeof variable.value !== "number" && typeof variable.value !== "string") ||
+                (typeof variable.value === "number" && !Number.isFinite(variable.value))
+            )))
         ) {
             throw new Error("The flowchart contains an invalid or duplicate shape.");
         }
@@ -71,6 +79,26 @@ function parseDiagram(json: string): DiagramFile {
         }
         if (shape.type === "input-output" && shape.inputOutputType !== "input" && shape.inputOutputType !== "output") {
             throw new Error("An Input / Output shape has an invalid type.");
+        }
+        if (shape.variables) {
+            const variableNames = new Set<string>();
+            shape.variables.forEach((variable) => {
+                if (variableNames.has(variable.name)) {
+                    throw new Error("The flowchart contains duplicate variable names in a shape.");
+                }
+                variableNames.add(variable.name);
+                if (variable.type === "number" && variable.value !== undefined && typeof variable.value !== "number") {
+                    throw new Error("The flowchart contains an invalid numeric initial value.");
+                }
+                if (variable.type === "string" && variable.value !== undefined && typeof variable.value !== "string") {
+                    throw new Error("The flowchart contains an invalid string initial value.");
+                }
+            });
+        }
+        if (shape.type === "initialization" && (!shape.variables?.length || shape.variables.some((variable) =>
+            variable.value === undefined || variable.value === ""
+        ))) {
+            throw new Error("An Initialization shape must define variables with initial values.");
         }
         ids.add(shape.id);
         return shape;
@@ -102,13 +130,14 @@ export function exportDiagramJson(): string {
     const shapeIds = new Map(Shape.all.map((shape) => [shape, shape.id]));
     const shapes: SavedShape[] = Shape.all.map((shape) => ({
         id: shape.id,
-        type: shape instanceof Decision ? "decision" : shape instanceof InputOutput ? "input-output" : shape instanceof Terminator ? "terminator" : "process",
+        type: shape instanceof Decision ? "decision" : shape instanceof InputOutput ? "input-output" : shape instanceof Initialization ? "initialization" : shape instanceof Terminator ? "terminator" : "process",
         x: shape.posX,
         y: shape.posY,
         width: shape.getSize().x,
         height: shape.getSize().y,
-        text: shape.content.textContent ?? "",
+        text: shape.content.innerText.replace(/\r\n?/g, "\n"),
         programCode: shape.programCode,
+        ...(shape.variables.length > 0 ? { variables: shape.variables.map((variable) => ({ ...variable })) } : {}),
         ...(shape instanceof Terminator ? { terminatorType: shape.terminatorType } : {}),
         ...(shape instanceof InputOutput ? { inputOutputType: shape.inputOutputType } : {}),
     }));
@@ -132,9 +161,11 @@ export function importDiagramJson(json: string, addShape: (shape: Shape) => Shap
     diagram.shapes.forEach((saved) => {
         const shape = saved.type === "decision" ? new Decision()
             : saved.type === "input-output" ? new InputOutput(saved.inputOutputType)
+            : saved.type === "initialization" ? new Initialization()
             : saved.type === "terminator" ? new Terminator(saved.terminatorType)
             : new Process();
         shape.programCode = saved.programCode;
+        shape.variables = saved.variables?.map((variable) => ({ ...variable })) ?? [];
         shape.content.textContent = saved.text;
         if (saved.width !== undefined && saved.height !== undefined) {
             shape.restoreSize(saved.width, saved.height);

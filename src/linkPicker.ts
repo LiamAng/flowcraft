@@ -1,4 +1,4 @@
-import { Shape, Process, Decision, InputOutput, Terminator } from "./shapes";
+import { Shape, Process, Decision, InputOutput, Initialization, Terminator } from "./shapes";
 import { pickInputOutputType } from "./inputOutputPicker";
 
 type Option = { label: string; icon: string; create: () => Shape; pick?: (x: number, y: number) => Promise<Shape | null> };
@@ -12,6 +12,7 @@ const OPTIONS: Option[] = [
         create: () => new InputOutput(),
         pick: (x, y) => pickInputOutputType(x, y).then((type) => type ? new InputOutput(type) : null),
     },
+    { label: "Initialization", icon: "initialization", create: () => new Initialization() },
 
     { label: "Terminator (End)", icon: "terminator", create: () => new Terminator("end") },
 ];

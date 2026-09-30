@@ -1,4 +1,4 @@
-import { Shape, Process, Decision, InputOutput, Terminator } from "./shapes";
+import { Shape, Process, Decision, InputOutput, Initialization, Terminator } from "./shapes";
 import { pickTerminatorType } from "./terminatorPicker";
 import { pickInputOutputType } from "./inputOutputPicker";
 import { initLinkPicker } from "./linkPicker";
@@ -42,6 +42,7 @@ const factoryMap = {
     process: () => new Process(),
     decision: () => new Decision(),
     'input-output': () => new InputOutput(),
+    initialization: () => new Initialization(),
     terminator: () => new Terminator(),
 } as const;
 
@@ -64,10 +65,33 @@ function renderPalette() {
         { key: 'process', label: 'Process' },
         { key: 'decision', label: 'Decision' },
         { key: 'input-output', label: 'Input / Output' },
+        { key: 'initialization', label: 'Initialization' },
         { key: 'terminator', label: 'Terminator' },
     ] as const;
 
     palette.innerHTML = '';
+    const dock = document.createElement("div");
+    dock.className = "palette-dock";
+    const updatePaletteVisibility = () => {
+        dock.hidden = Shape.readOnly;
+    };
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "palette-toggle";
+    toggle.setAttribute("aria-expanded", "false");
+    toggle.setAttribute("aria-label", "Show shapes");
+    toggle.title = "Show shapes";
+    toggle.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>';
+    toggle.addEventListener("click", () => {
+        const open = dock.classList.toggle("palette-open");
+        toggle.setAttribute("aria-expanded", String(open));
+        toggle.setAttribute("aria-label", `${open ? "Hide" : "Show"} shapes`);
+        toggle.title = `${open ? "Hide" : "Show"} shapes`;
+    });
+    dock.append(toggle, palette);
+    document.body.appendChild(dock);
+    document.addEventListener("flowcraft:settings", updatePaletteVisibility);
+    updatePaletteVisibility();
 
     tools.forEach((tool) => {
         const item = document.createElement('div');
@@ -75,10 +99,9 @@ function renderPalette() {
         item.dataset.kind = tool.key;
         item.setAttribute('role', 'button');
         item.setAttribute('tabindex', '0');
-        item.innerHTML = `
-            <div class="mini-shape ${tool.key === 'input-output' ? 'io' : tool.key}">${tool.label}</div>
-            <span class="shape-tool-label">${tool.label}</span>
-        `;
+        item.setAttribute("aria-label", tool.label);
+        item.title = tool.label;
+        item.innerHTML = `<div class="mini-shape ${tool.key === 'input-output' ? 'io' : tool.key}"></div>`;
 
         const activate = () => {
             selectedTool = tool.key;
