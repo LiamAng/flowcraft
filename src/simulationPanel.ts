@@ -26,7 +26,10 @@ function inputVariables(shape: InputOutput): VariableDefinition[] {
 function display(value: unknown, accuracy: number): string {
     if (value === undefined) return "";
     if (value === null) return "null";
-    if (typeof value === "number") return Number.isFinite(value) ? value.toFixed(accuracy) : String(value);
+    if (typeof value === "number") {
+        if (!Number.isFinite(value)) return String(value);
+        return Number.isInteger(value) ? String(value) : value.toFixed(accuracy);
+    }
     if (typeof value === "string") return value;
     if (typeof value === "object") {
         try {
@@ -384,6 +387,13 @@ export function initSimulationPanel() {
             if (shape.variables.length === 0) throw new Error(`Add at least one variable to Initialization ${shape.id}.`);
             shape.variables.forEach(({ name, type, value }) => {
                 if (value === undefined || value === "") throw new Error(`Set an initial value for ${name} in Initialization ${shape.id}.`);
+                if (type === "variable") {
+                    if (typeof value !== "string" || !Object.prototype.hasOwnProperty.call(runtime.getScope(), value)) {
+                        throw new Error(`Source variable ${String(value)} for ${name} is not initialized.`);
+                    }
+                    runtime.getScope()[name] = runtime.getScope()[value];
+                    return;
+                }
                 runtime.getScope()[name] = type === "number" ? Number(value) : String(value);
             });
         }

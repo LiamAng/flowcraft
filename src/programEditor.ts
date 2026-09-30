@@ -21,10 +21,20 @@ function createVariableRow(initial: VariableDefinition, needsValue: boolean) {
     name.setAttribute("aria-label", "Variable name");
     const type = document.createElement("select");
     type.setAttribute("aria-label", "Variable type");
-    ["number", "string"].forEach((value) => {
+    const types = needsValue
+        ? [
+            { value: "number", label: "Number" },
+            { value: "string", label: "String" },
+            { value: "variable", label: "From variable" },
+        ]
+        : [
+            { value: "number", label: "Number" },
+            { value: "string", label: "String" },
+        ];
+    types.forEach(({ value, label }) => {
         const option = document.createElement("option");
         option.value = value;
-        option.textContent = value === "number" ? "Number" : "String";
+        option.textContent = label;
         type.appendChild(option);
     });
     type.value = initial.type;
@@ -32,12 +42,14 @@ function createVariableRow(initial: VariableDefinition, needsValue: boolean) {
     if (value) {
         value.type = initial.type === "number" ? "number" : "text";
         value.value = initial.value === undefined ? "" : String(initial.value);
-        value.placeholder = "Initial value";
-        value.setAttribute("aria-label", "Initial value");
+        value.placeholder = initial.type === "variable" ? "Variable name" : "Initial value";
+        value.setAttribute("aria-label", initial.type === "variable" ? "Source variable name" : "Initial value");
         type.addEventListener("change", () => {
             const previous = value.value;
             value.type = type.value === "number" ? "number" : "text";
             value.value = previous;
+            value.placeholder = type.value === "variable" ? "Variable name" : "Initial value";
+            value.setAttribute("aria-label", type.value === "variable" ? "Source variable name" : "Initial value");
         });
     }
     const remove = document.createElement("button");
@@ -78,18 +90,33 @@ function createDialog() {
                     return;
                 }
                 names.add(name);
-                const definition: VariableDefinition = { name, type: item.type.value as "number" | "string" };
+                const type = item.type.value as VariableDefinition["type"];
+                const definition: VariableDefinition = { name, type };
                 if (isInitialization && item.value) {
                     if (!item.value.value.trim()) {
                         if (error) {
-                            error.textContent = `Enter an initial value for ${name}.`;
+                            error.textContent = type === "variable"
+                                ? `Enter the source variable for ${name}.`
+                                : `Enter an initial value for ${name}.`;
                             error.hidden = false;
                         }
                         item.value.focus();
                         return;
                     }
-                    definition.value = definition.type === "number" ? Number(item.value.value) : item.value.value;
-                    if (definition.type === "number" && !Number.isFinite(definition.value)) {
+                    if (type === "variable" && !/^[A-Za-z_$][\w$]*$/.test(item.value.value.trim())) {
+                        if (error) {
+                            error.textContent = `Enter a valid source variable name for ${name}.`;
+                            error.hidden = false;
+                        }
+                        item.value.focus();
+                        return;
+                    }
+                    definition.value = type === "number"
+                        ? Number(item.value.value)
+                        : type === "variable"
+                            ? item.value.value.trim()
+                            : item.value.value;
+                    if (type === "number" && typeof definition.value === "number" && !Number.isFinite(definition.value)) {
                         if (error) {
                             error.textContent = `Enter a valid number for ${name}.`;
                             error.hidden = false;
@@ -189,7 +216,7 @@ export function openProgramEditor(shape: Shape) {
         if (dialogTitle) dialogTitle.textContent = isInput ? "Input variables" : "Initialize variables";
         guidance = isInput
             ? "Add variables to request during simulation. Values are collected using the selected type."
-            : "Add variables and set the required initial value for each.";
+            : "Add variables and set each initial value or source variable.";
     } else {
         if (dialogTitle) dialogTitle.textContent = "Edit shape code";
         if (shape instanceof InputOutput) {

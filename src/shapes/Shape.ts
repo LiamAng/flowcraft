@@ -10,7 +10,7 @@ export type LinkRole = "next" | "altNext";
 export type Waypoint = { ox: number; oy: number; dir: LinkDirection };
 export type VariableDefinition = {
     name: string;
-    type: "number" | "string";
+    type: "number" | "string" | "variable";
     value?: number | string;
 };
 

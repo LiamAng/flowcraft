@@ -67,7 +67,7 @@ function parseDiagram(json: string): DiagramFile {
             (shape.variables !== undefined && (!Array.isArray(shape.variables) || shape.variables.some((variable) =>
                 !variable || typeof variable.name !== "string" ||
                 !/^[A-Za-z_$][\w$]*$/.test(variable.name) ||
-                (variable.type !== "number" && variable.type !== "string") ||
+                (variable.type !== "number" && variable.type !== "string" && variable.type !== "variable") ||
                 (variable.value !== undefined && typeof variable.value !== "number" && typeof variable.value !== "string") ||
                 (typeof variable.value === "number" && !Number.isFinite(variable.value))
             )))
@@ -92,6 +92,13 @@ function parseDiagram(json: string): DiagramFile {
                 }
                 if (variable.type === "string" && variable.value !== undefined && typeof variable.value !== "string") {
                     throw new Error("The flowchart contains an invalid string initial value.");
+                }
+                if (variable.type === "variable" && (
+                    shape.type !== "initialization" ||
+                    typeof variable.value !== "string" ||
+                    !/^[A-Za-z_$][\w$]*$/.test(variable.value)
+                )) {
+                    throw new Error("The flowchart contains an invalid source variable.");
                 }
             });
         }
