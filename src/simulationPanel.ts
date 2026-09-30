@@ -1,4 +1,4 @@
-import { Simulator } from "./simulator";
+import type { Simulator } from "./simulator";
 import { Decision, Initialization, Shape, Terminator, InputOutput, type LinkRecord, type VariableDefinition } from "./shapes";
 import { Process } from "./shapes/Process";
 import { validateFlowchart } from "./flowValidation";
@@ -232,7 +232,18 @@ export function initSimulationPanel() {
     window.addEventListener("resize", updateSplit);
     updateSplit();
 
-    const simulator = new Simulator();
+    let simulator: Simulator | null = null;
+    let simulatorPromise: Promise<Simulator> | null = null;
+    const getSimulator = () => {
+        if (simulator) return Promise.resolve(simulator);
+        if (!simulatorPromise) {
+            simulatorPromise = import("./simulator").then(({ Simulator: SimulatorRuntime }) => {
+                simulator = new SimulatorRuntime();
+                return simulator;
+            });
+        }
+        return simulatorPromise;
+    };
     const requestInput = createInputDialog();
     let current: Shape | null = null;
     let previousConnection: LinkRecord | null = null;
@@ -310,7 +321,7 @@ export function initSimulationPanel() {
         status.classList.remove("error");
     };
 
-    const start = () => {
+    const start = async () => {
         if (current) return;
         const issues = validateFlowchart();
         if (issues.length > 0) {
@@ -318,21 +329,23 @@ export function initSimulationPanel() {
         }
         const starts = Shape.all.filter((shape) => shape instanceof Terminator && shape.terminatorType === "start");
         if (starts.length !== 1) throw new Error("Simulation requires exactly one Start terminator.");
+        const runtime = await getSimulator();
         current = starts[0];
         previousConnection = null;
         lastOutput = "";
         wholeOutput = [];
         rows = [];
         wholeOutputPanel.hidden = true;
-        simulator.reset();
+        runtime.reset();
         renderTable();
         setStatus("Ready");
         Shape.setSimulationFocus(current);
     };
 
     const step = async (): Promise<boolean> => {
-        if (!current) start();
+        if (!current) await start();
         if (!current) return false;
+        const runtime = await getSimulator();
         if (rows.length >= MAX_STEPS) {
             throw new Error(`Simulation stopped after ${MAX_STEPS} steps to prevent an infinite loop.`);
         }
@@ -356,22 +369,22 @@ export function initSimulationPanel() {
             }
             variables.forEach(({ name, type }) => {
                 const value = Object.prototype.hasOwnProperty.call(inputValues, name) ? inputValues[name] : enteredValues[name];
-                simulator.getScope()[name] = type === "number" ? Number(value) : String(value);
+                runtime.getScope()[name] = type === "number" ? Number(value) : String(value);
             });
         } else if (shape instanceof Decision) {
             if (!shape.programCode.trim()) throw new Error(`Enter a true/false expression in Decision ${shape.id}'s code.`);
-            condition = Boolean(simulator.evaluate(shape.programCode));
+            condition = Boolean(runtime.evaluate(shape.programCode));
         } else if (shape instanceof InputOutput && shape.inputOutputType === "output") {
             if (!shape.programCode.trim()) throw new Error(`Enter an expression in Output ${shape.id}'s code.`);
-            lastOutput = simulator.evaluate(shape.programCode);
+            lastOutput = runtime.evaluate(shape.programCode);
             wholeOutput.push(lastOutput);
         } else if (shape instanceof Process && shape.programCode.trim()) {
-            simulator.exec(shape.programCode);
+            runtime.exec(shape.programCode);
         } else if (shape instanceof Initialization) {
             if (shape.variables.length === 0) throw new Error(`Add at least one variable to Initialization ${shape.id}.`);
             shape.variables.forEach(({ name, type, value }) => {
                 if (value === undefined || value === "") throw new Error(`Set an initial value for ${name} in Initialization ${shape.id}.`);
-                simulator.getScope()[name] = type === "number" ? Number(value) : String(value);
+                runtime.getScope()[name] = type === "number" ? Number(value) : String(value);
             });
         }
 
@@ -379,7 +392,7 @@ export function initSimulationPanel() {
             rows.push({
                 step: rows.length + 1,
                 shape,
-                variables: { ...simulator.getScope() },
+                variables: { ...runtime.getScope() },
                 conditions: shape instanceof Decision && condition !== undefined ? { [shape.id]: condition } : {},
                 output: shape instanceof InputOutput && shape.inputOutputType === "output" ? lastOutput : "",
             });
@@ -417,7 +430,7 @@ export function initSimulationPanel() {
     };
 
     const reset = () => {
-        simulator.reset();
+        simulator?.reset();
         current = null;
         previousConnection = null;
         lastOutput = "";

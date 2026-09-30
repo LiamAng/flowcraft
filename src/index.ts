@@ -74,6 +74,13 @@ function renderPalette() {
     dock.className = "palette-dock";
     const updatePaletteVisibility = () => {
         dock.hidden = Shape.readOnly;
+        if (Shape.readOnly) {
+            dock.classList.remove("palette-open");
+            document.documentElement.classList.remove("palette-open");
+            toggle.setAttribute("aria-expanded", "false");
+            toggle.setAttribute("aria-label", "Show shapes");
+            toggle.title = "Show shapes";
+        }
     };
     const toggle = document.createElement("button");
     toggle.type = "button";
@@ -84,6 +91,7 @@ function renderPalette() {
     toggle.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>';
     toggle.addEventListener("click", () => {
         const open = dock.classList.toggle("palette-open");
+        document.documentElement.classList.toggle("palette-open", open);
         toggle.setAttribute("aria-expanded", String(open));
         toggle.setAttribute("aria-label", `${open ? "Hide" : "Show"} shapes`);
         toggle.title = `${open ? "Hide" : "Show"} shapes`;

@@ -63,6 +63,7 @@ export class Shape {
     protected static draggingLink: LinkRecord | null = null;
     protected static selectedLink: LinkRecord | null = null;
     protected static deleteHooked = false;
+    protected static connectionRenderScheduled = false;
     protected static lastLineClick: { link: LinkRecord; time: number } | null = null;
     protected static groupDrag: { leader: Shape; startX: number; startY: number; origins: Map<Shape, { x: number; y: number }> } | null = null;
 
@@ -164,6 +165,15 @@ export class Shape {
 
     public static refreshConnections() {
         Shape.renderConnections();
+    }
+
+    protected static scheduleConnectionRender() {
+        if (Shape.connectionRenderScheduled) return;
+        Shape.connectionRenderScheduled = true;
+        window.requestAnimationFrame(() => {
+            Shape.connectionRenderScheduled = false;
+            Shape.renderConnections();
+        });
     }
 
     public static switchDecisionBranch(link: LinkRecord) {
@@ -371,7 +381,7 @@ export class Shape {
             this.content.style.clipPath = "polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%)";
         }
 
-        Shape.renderConnections();
+        Shape.scheduleConnectionRender();
     }
 
     protected contentHeightFor(width: number): number {
@@ -1335,7 +1345,7 @@ export class Shape {
         }
 
         const point = Shape.clientToCanvas(event.clientX, event.clientY);
-        if (point.x >= this.posX + size.x && point.y >= this.posY + size.y) {
+        if (point.x >= this.posX + size.x || point.y >= this.posY + size.y) {
             return;
         }
 
@@ -1402,7 +1412,7 @@ export class Shape {
                 shape.apply();
             });
             Shape.renderSuspended = false;
-            Shape.renderConnections();
+            Shape.scheduleConnectionRender();
             Shape.showAlignment({ x: x0 + dx, y: y0 + dy, w: x1 - x0, h: y1 - y0 }, members);
             this.element.style.cursor = "grabbing";
             return;
@@ -1527,17 +1537,29 @@ export class Shape {
         this.updateResizeHandles();
         this.updateLinkHandles();
 
-        this.element.addEventListener("mousedown", (event: MouseEvent) => {
+        this.element.addEventListener("pointerdown", (event: PointerEvent) => {
+            if (!event.isPrimary || event.button !== 0) return;
+            const target = event.target;
+            if (target instanceof Element && target.closest(".handle, .link-handle, .shape-action")) return;
             if (Shape.pendingLink && Shape.pendingLink.source !== this) {
                 event.preventDefault();
                 Shape.completeLink(this);
                 return;
             }
             this.onMouseDown(event);
+            if (!this.isDragging) return;
+            const onMove = (moveEvent: PointerEvent) => this.onMouseMove(moveEvent);
+            const onUp = () => {
+                document.removeEventListener("pointermove", onMove);
+                document.removeEventListener("pointerup", onUp);
+                document.removeEventListener("pointercancel", onUp);
+                this.onMouseUp();
+                Shape.scheduleConnectionRender();
+            };
+            document.addEventListener("pointermove", onMove);
+            document.addEventListener("pointerup", onUp, { once: true });
+            document.addEventListener("pointercancel", onUp, { once: true });
         });
-        document.addEventListener("mousemove", this.onMouseMove.bind(this));
-        document.addEventListener("mouseup", this.onMouseUp.bind(this));
-
         this.ratio = this.minWidth / this.minHeight;
         this.width = this.minWidth;
         this.height = this.minHeight;

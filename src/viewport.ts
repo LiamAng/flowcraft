@@ -112,7 +112,8 @@ export function initViewport(chart: HTMLElement, canvas: HTMLElement) {
 
     chart.addEventListener("pointerdown", (event: PointerEvent) => {
         const onBackground = event.target === chart || event.target === canvas;
-        const wantsPan = event.button === 1 || (event.button === 0 && (spaceDown || (Shape.readOnly && onBackground)));
+        const touchBackgroundPan = event.pointerType === "touch" && (onBackground || Shape.readOnly);
+        const wantsPan = event.button === 1 || (event.button === 0 && (spaceDown || touchBackgroundPan || (Shape.readOnly && onBackground)));
         if (!wantsPan || Shape.pendingLink) return;
         event.preventDefault();
         event.stopImmediatePropagation();
