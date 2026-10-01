@@ -332,9 +332,16 @@ export function initSimulationPanel() {
         const showOutputColumn = !(current === null && wholeOutput.length === 1);
         const head = document.createElement("thead");
         const headerRow = document.createElement("tr");
-        [ ...(settings.showStepNumbers ? ["Step"] : []), ...variableNames, ...decisionShapes.map((shape) => `Condition: ${shape.content.textContent?.trim() || shape.id}`), ...(showOutputColumn ? ["Output"] : [])].forEach((title, index, all) => {
+        const columnTitles = [ ...(settings.showStepNumbers ? ["Step"] : []), ...variableNames, ...decisionShapes.map((shape) => `Condition: ${shape.content.textContent?.trim() || shape.id}`), ...(showOutputColumn ? ["Output"] : [])];
+        columnTitles.forEach((title, index, all) => {
             const cell = document.createElement("th");
             cell.textContent = title;
+            if (title === "Step" && settings.showShapeContentInSteps) {
+                cell.classList.add("simulation-step-content-column");
+                cell.style.width = `${settings.simulationStepContentMaxWidth}px`;
+                cell.style.minWidth = `${settings.simulationStepContentMaxWidth}px`;
+                cell.style.maxWidth = `${settings.simulationStepContentMaxWidth}px`;
+            }
             if (index > 0 && index < all.length - 1) cell.style.backgroundColor = columnColor(title);
             headerRow.appendChild(cell);
         });
@@ -364,9 +371,14 @@ export function initSimulationPanel() {
                     !(row.shape instanceof Decision) &&
                     !(row.shape instanceof Initialization) &&
                     Boolean(shapeContent);
+                if (settings.showShapeContentInSteps) {
+                    step.classList.add("simulation-step-content-column");
+                    step.style.maxWidth = `${settings.simulationStepContentMaxWidth}px`;
+                    step.style.minWidth = `${settings.simulationStepContentMaxWidth}px`;
+                    step.style.width = `${settings.simulationStepContentMaxWidth}px`;
+                }
                 if (showingShapeContent) {
                     step.classList.add("simulation-step-shape-content");
-                    step.style.maxWidth = `${settings.simulationStepContentMaxWidth}px`;
                 }
                 step.textContent = stepLabel;
                 tr.appendChild(step);
