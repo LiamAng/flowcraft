@@ -115,19 +115,23 @@ export function initViewport(chart: HTMLElement, canvas: HTMLElement) {
         render();
     };
 
-    const button = (label: string, title: string, action: () => void) => {
+    const button = (label: string, title: string, action: () => void, icon?: string) => {
         const element = document.createElement("button");
         element.type = "button";
-        element.textContent = label;
+        if (icon) {
+            element.innerHTML = icon;
+        } else {
+            element.textContent = label;
+        }
         element.title = title;
         element.setAttribute("aria-label", title);
         element.addEventListener("click", action);
         controls.appendChild(element);
     };
-    button("−", "Zoom out", () => centreZoom(Shape.zoom / 1.2));
-    button("+", "Zoom in", () => centreZoom(Shape.zoom * 1.2));
-    button("Reset", "Reset zoom", () => centreZoom(1));
-    button("Fit", "Fit diagram to view", fit);
+    button("", "Zoom in", () => centreZoom(Shape.zoom * 1.2), '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>');
+    button("", "Zoom out", () => centreZoom(Shape.zoom / 1.2), '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"/></svg>');
+    button("", "Reset zoom", () => centreZoom(1), '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>');
+    button("", "Fit diagram to view", fit, '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5M8 8h8v8H8z"/></svg>');
     controls.appendChild(level);
     document.body.appendChild(controls);
 

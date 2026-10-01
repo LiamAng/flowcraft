@@ -1,8 +1,9 @@
-import { downloadDiagram, downloadDiagramImage, importDiagramJson, type SimulationExportData } from "./diagramFile";
+import { downloadDiagram, downloadDiagramImage, exportDiagramJson, importDiagramJson, type SimulationExportData } from "./diagramFile";
 import { InputOutput, Shape } from "./shapes";
 import { initSettingsPanel } from "./settingsPanel";
 import { initProjectHistory } from "./projectHistory";
 import { settings } from "./settings";
+import { createShareUrl, isShareUrl, readShareUrl } from "./shareLink";
 
 export async function initDiagramIO(
     addShape: (shape: Shape) => Shape,
@@ -58,6 +59,57 @@ export async function initDiagramIO(
             report(error instanceof Error ? error.message : "Could not import the flowchart file.", true);
         }
     });
+    const shareDialog = document.createElement("dialog");
+    shareDialog.className = "program-editor share-link-dialog";
+    const shareForm = document.createElement("form");
+    const shareTitle = document.createElement("h2");
+    shareTitle.textContent = "Share flowchart";
+    const shareHelp = document.createElement("p");
+    shareHelp.className = "program-editor-help";
+    shareHelp.textContent = "Anyone with this link can open the complete flowchart. Large links may not be accepted by every app.";
+    const shareField = document.createElement("textarea");
+    shareField.readOnly = true;
+    shareField.rows = 4;
+    shareField.setAttribute("aria-label", "Share link");
+    const shareActions = document.createElement("div");
+    shareActions.className = "program-editor-actions";
+    const closeShare = document.createElement("button");
+    closeShare.type = "button";
+    closeShare.textContent = "Close";
+    closeShare.addEventListener("click", () => shareDialog.close());
+    const copyShare = document.createElement("button");
+    copyShare.type = "button";
+    copyShare.textContent = "Copy link";
+    copyShare.addEventListener("click", async () => {
+        try {
+            await navigator.clipboard.writeText(shareField.value);
+            report("Share link copied.");
+        } catch {
+            shareField.focus();
+            shareField.select();
+            report("Clipboard access is unavailable. The link is selected so you can copy it manually.", true);
+        }
+    });
+    shareActions.append(closeShare, copyShare);
+    shareForm.append(shareTitle, shareHelp, shareField, shareActions);
+    shareDialog.appendChild(shareForm);
+    document.body.appendChild(shareDialog);
+    const shareLink = async () => {
+        try {
+            shareField.value = await createShareUrl(exportDiagramJson(false));
+            shareDialog.showModal();
+            shareField.focus();
+            shareField.select();
+            try {
+                await navigator.clipboard.writeText(shareField.value);
+                report("Share link copied.");
+            } catch {
+                report("Select and copy the link to share this flowchart.");
+            }
+        } catch (error) {
+            report(error instanceof Error ? error.message : "Could not create a share link.", true);
+        }
+    };
     const settingsButton = initSettingsPanel({
         exportDiagram: downloadDiagram,
         exportImage: async () => {
@@ -114,15 +166,30 @@ export async function initDiagramIO(
             }
         },
         importDiagram: () => fileInput.click(),
+        shareLink,
         newProject: history.newProject,
     });
-    settingsButton.hidden = new URLSearchParams(window.location.search).has("hideSettings");
+    settingsButton.hidden = new URLSearchParams(window.location.search).has("hideSettings") ||
+        isShareUrl(window.location.hash);
     tools.append(history.undoButton, history.redoButton, settingsButton, fileInput);
 
     tools.appendChild(status);
     document.body.appendChild(tools);
 
     const url = new URLSearchParams(window.location.search).get("url");
+    try {
+        const sharedJson = await readShareUrl(window.location.hash);
+        if (sharedJson !== null) {
+            importDiagramJson(sharedJson, addShape);
+            fitView();
+            status.hidden = true;
+            onImport();
+            return true;
+        }
+    } catch (error) {
+        report(error instanceof Error ? error.message : "Could not load the shared flowchart.", true);
+        return false;
+    }
     if (!url) {
         history.loadLocalProject();
         fitView();

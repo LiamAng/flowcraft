@@ -162,8 +162,8 @@
             display: flex;
             flex-direction: column;
             align-items: center;
-            gap: 4px;
-            padding: 6px;
+            gap: 3px;
+            padding: 5px;
             border: 1px solid #cbd5e1;
             border-radius: 10px;
             background: rgba(255, 255, 255, 0.94);
@@ -199,8 +199,8 @@
         }
 
         .canvas-zoom button {
-            width: 32px;
-            height: 28px;
+            width: 28px;
+            height: 26px;
             padding: 0;
             border: 0;
             border-radius: 6px;
@@ -208,6 +208,17 @@
             color: #334155;
             cursor: pointer;
             font: inherit;
+        }
+
+        .canvas-zoom button svg {
+            display: block;
+            width: 16px;
+            height: 16px;
+            margin: auto;
+            fill: none;
+            stroke: currentColor;
+            stroke-width: 2;
+            stroke-linecap: round;
         }
 
         .canvas-zoom button:hover,
@@ -744,6 +755,8 @@
             display: grid;
             gap: 12px;
             max-height: min(55vh, 420px);
+            min-width: 0;
+            padding: 4px;
             overflow-y: auto;
         }
 
@@ -947,8 +960,8 @@
             }
 
             .canvas-zoom button {
-                width: 40px;
-                height: 40px;
+                width: 34px;
+                height: 34px;
             }
 
             .palette-toggle {
@@ -1513,6 +1526,17 @@
             background: #f8fafc;
             font: 13px/1.5 Consolas, monospace;
             user-select: text;
+        }
+
+        .share-link-dialog {
+            width: min(560px, calc(100vw - 32px));
+        }
+
+        .share-link-dialog textarea {
+            min-height: 88px;
+            resize: vertical;
+            overflow-wrap: anywhere;
+            font: 12px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace;
         }
 
         .program-editor-help {

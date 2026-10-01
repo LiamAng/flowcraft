@@ -1,6 +1,6 @@
 import { applySettings, defaultSettings, settings, type Settings } from "./settings";
 
-export function initSettingsPanel(fileActions: { exportDiagram: () => void; exportImage: () => void; importDiagram: () => void; newProject: () => boolean }): HTMLButtonElement {
+export function initSettingsPanel(fileActions: { exportDiagram: () => void; exportImage: () => void; importDiagram: () => void; shareLink: () => void; newProject: () => boolean }): HTMLButtonElement {
     const button = document.createElement("button");
     button.type = "button";
     button.textContent = "Settings";
@@ -235,6 +235,13 @@ export function initSettingsPanel(fileActions: { exportDiagram: () => void; expo
         dialog.close();
         fileActions.importDiagram();
     });
+    const shareButton = document.createElement("button");
+    shareButton.type = "button";
+    shareButton.textContent = "Share link";
+    shareButton.addEventListener("click", () => {
+        dialog.close();
+        fileActions.shareLink();
+    });
     const reset = document.createElement("button");
     reset.type = "button";
     reset.textContent = "Defaults";
@@ -244,7 +251,7 @@ export function initSettingsPanel(fileActions: { exportDiagram: () => void; expo
     const save = document.createElement("button");
     save.type = "submit";
     save.textContent = "Save";
-    actionBar.append(newProjectButton, exportButton, exportImageButton, importButton, reset, cancel, save);
+    actionBar.append(newProjectButton, exportButton, exportImageButton, importButton, shareButton, reset, cancel, save);
 
     form.append(title, chartTitleLabel, descriptionLabel, branchLabelsLabel, ...checks.map((c) => c.label), gridLabel, ratioLabel, accuracyLabel, stepContentWidthLabel, speedLabel, inputsLabel, error, actionBar);
     dialog.appendChild(form);
