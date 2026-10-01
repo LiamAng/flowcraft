@@ -3,6 +3,7 @@ import { Decision, Initialization, Shape, Terminator, InputOutput, type LinkReco
 import { Process } from "./shapes/Process";
 import { validateFlowchart } from "./flowValidation";
 import { applySettings, settings } from "./settings";
+import { createSimulationInputsControl } from "./simulationInputsDialog";
 
 type SimulationRow = {
     step: number;
@@ -228,7 +229,7 @@ export function initSimulationPanel() {
             ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 14 5-5 5 5"/></svg>'
             : '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 10 5 5 5-5"/></svg>';
     };
-    setControlsCollapsed(settings.autorun);
+    setControlsCollapsed(false);
     header.append(heading, collapseButton);
 
     const controls = document.createElement("div");
@@ -262,11 +263,12 @@ export function initSimulationPanel() {
     showInputsButton.title = "Hide predefined inputs";
     showInputsButton.setAttribute("aria-label", "Hide predefined inputs");
     showInputsButton.setAttribute("aria-expanded", "true");
+    const configureInputsButton = createSimulationInputsControl();
     const status = document.createElement("span");
     status.className = "simulation-status";
     status.setAttribute("role", "status");
 
-    controls.append(nextButton, runButton, resetButton, runWithoutInputsButton, showInputsButton);
+    controls.append(nextButton, runButton, resetButton, runWithoutInputsButton, configureInputsButton, showInputsButton);
 
     const inputsPreview = document.createElement("div");
     inputsPreview.className = "simulation-input-preview";
@@ -728,8 +730,7 @@ export function initSimulationPanel() {
     });
 
     const autorun = () => {
-        if (!settings.autorun) return;
-        setControlsCollapsed(true);
+        if (!settings.autorun || Shape.all.length === 0) return;
         try {
             const inputValues = settings.inputs;
             const inputs = Shape.all.filter((shape): shape is InputOutput =>
@@ -742,6 +743,7 @@ export function initSimulationPanel() {
             if (missing.length > 0) {
                 throw new Error(`Autorun requires simulation inputs in settings for: ${[...new Set(missing)].join(", ")}.`);
             }
+            setControlsCollapsed(true);
             runButton.click();
         } catch (error) {
             setError(error);

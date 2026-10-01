@@ -48,7 +48,7 @@ export const defaultSettings: Settings = {
     compressSimulationTable: false,
     collapseConsecutiveConditions: false,
     collapseOtherSteps: false,
-    autorun: false,
+    autorun: true,
     inputs: {},
     simulationRatio: 0.32,
     simulationStepContentMaxWidth: 200,

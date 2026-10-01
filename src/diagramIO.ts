@@ -52,6 +52,7 @@ export async function initDiagramIO(
         }
         try {
             importDiagramJson(await file.text(), addShape);
+            history.markExported();
             fitView();
             status.hidden = true;
             onImport();
@@ -111,7 +112,10 @@ export async function initDiagramIO(
         }
     };
     const settingsButton = initSettingsPanel({
-        exportDiagram: downloadDiagram,
+        exportDiagram: () => {
+            downloadDiagram();
+            history.markExported();
+        },
         exportImage: async () => {
             const inputNames = Shape.all
                 .filter((shape): shape is InputOutput => shape instanceof InputOutput && shape.inputOutputType === "input")
@@ -181,6 +185,7 @@ export async function initDiagramIO(
         const sharedJson = await readShareUrl(window.location.hash);
         if (sharedJson !== null) {
             importDiagramJson(sharedJson, addShape);
+            history.markExported();
             fitView();
             status.hidden = true;
             onImport();
@@ -191,7 +196,6 @@ export async function initDiagramIO(
         return false;
     }
     if (!url) {
-        history.loadLocalProject();
         fitView();
         onImport();
         return true;
@@ -208,6 +212,7 @@ export async function initDiagramIO(
             throw new Error(`Could not load flowchart (${response.status} ${response.statusText}).`);
         }
         importDiagramJson(await response.text(), addShape);
+        history.markExported();
         fitView();
         status.hidden = true;
         onImport();

@@ -2,7 +2,6 @@ import { exportDiagramJson, importDiagramJson } from "./diagramFile";
 import { Shape } from "./shapes";
 import { applySettings, defaultSettings, settings } from "./settings";
 
-const STORAGE_KEY = "flowcraft.local-project.v1";
 const MAX_HISTORY = 100;
 
 export function initProjectHistory(addShape: (shape: Shape) => Shape, fitView: () => void, onError: (message: string) => void) {
@@ -10,22 +9,25 @@ export function initProjectHistory(addShape: (shape: Shape) => Shape, fitView: (
     let historyIndex = 0;
     let changeTimer = 0;
     let applyingHistory = false;
+    let exportedSnapshot = history[0];
     const controls: HTMLButtonElement[] = [];
 
+    try {
+        localStorage.removeItem("flowcraft.local-project.v1");
+    } catch (error) {
+        const detail = error instanceof Error ? ` ${error.message}` : "";
+        onError(`Could not clear the previously saved local flowchart.${detail}`);
+    }
+
+    const markExported = () => {
+        exportedSnapshot = exportDiagramJson(false);
+    };
     const updateControls = () => {
         controls.forEach((button) => {
             button.hidden = settings.readOnly;
         });
         controls[0].disabled = historyIndex === 0;
         controls[1].disabled = historyIndex >= history.length - 1;
-    };
-    const saveLocally = (snapshot = exportDiagramJson(false)) => {
-        try {
-            localStorage.setItem(STORAGE_KEY, snapshot);
-        } catch (error) {
-            const detail = error instanceof Error ? ` ${error.message}` : "";
-            onError(`Could not save the flowchart locally.${detail}`);
-        }
     };
     const commitCurrentState = () => {
         changeTimer = 0;
@@ -38,7 +40,6 @@ export function initProjectHistory(addShape: (shape: Shape) => Shape, fitView: (
             historyIndex = history.length - 1;
             updateControls();
         }
-        saveLocally(snapshot);
     };
     const scheduleCommit = () => {
         if (applyingHistory) return;
@@ -59,7 +60,6 @@ export function initProjectHistory(addShape: (shape: Shape) => Shape, fitView: (
         } finally {
             applyingHistory = false;
         }
-        saveLocally(snapshot);
         return true;
     };
     const undo = () => {
@@ -114,47 +114,22 @@ export function initProjectHistory(addShape: (shape: Shape) => Shape, fitView: (
             redo();
         }
     });
-    window.addEventListener("pagehide", () => {
-        window.clearTimeout(changeTimer);
-        saveLocally();
+    window.addEventListener("beforeunload", (event) => {
+        if (settings.readOnly || exportDiagramJson(false) === exportedSnapshot) return;
+        event.preventDefault();
+        event.returnValue = "";
     });
 
-    const loadLocalProject = () => {
-        let snapshot: string | null;
-        try {
-            snapshot = localStorage.getItem(STORAGE_KEY);
-        } catch (error) {
-            const detail = error instanceof Error ? ` ${error.message}` : "";
-            onError(`Could not read the locally saved flowchart.${detail}`);
-            return false;
-        }
-        if (!snapshot) return false;
-        applyingHistory = true;
-        try {
-            importDiagramJson(snapshot, addShape);
-            fitView();
-            history[0] = exportDiagramJson(false);
-            historyIndex = 0;
-            updateControls();
-            return true;
-        } catch (error) {
-            const detail = error instanceof Error ? error.message : "The locally saved flowchart is invalid.";
-            onError(`Could not restore the locally saved flowchart. ${detail}`);
-            return false;
-        } finally {
-            applyingHistory = false;
-        }
-    };
-
     const newProject = () => {
-        if (!window.confirm("Start a new project? Your current flowchart is saved locally and can be restored with Undo.")) {
+        if (!window.confirm("Start a new project? Unsaved changes will be lost. You can undo while this page remains open.")) {
             return false;
         }
         Shape.removeShapes([...Shape.all]);
         applySettings({ ...defaultSettings, inputs: {} });
+        markExported();
         fitView();
         return true;
     };
 
-    return { undoButton, redoButton, undo, redo, loadLocalProject, newProject };
+    return { undoButton, redoButton, undo, redo, markExported, newProject };
 }

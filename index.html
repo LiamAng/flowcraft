@@ -10,32 +10,32 @@
         }
 
         .variable-editor,
-        .settings-variable-list {
+        .simulation-input-list {
             display: grid;
             gap: 8px;
         }
 
         .variable-editor-row,
-        .settings-variable-row {
+        .simulation-input-row {
             display: grid;
             grid-template-columns: minmax(90px, 1fr) minmax(90px, 0.7fr) auto;
             align-items: center;
             gap: 8px;
         }
 
-        .settings-input-values {
+        .simulation-input-values {
             display: grid;
             grid-column: 1 / -1;
             gap: 6px;
         }
 
-        .settings-input-value {
+        .simulation-input-value {
             display: grid;
             grid-template-columns: minmax(0, 1fr) auto;
             gap: 6px;
         }
 
-        .settings-variable-row > button:nth-last-child(1) {
+        .simulation-input-row > button:nth-last-child(1) {
             grid-column: 1 / -1;
         }
 
@@ -45,8 +45,8 @@
 
         .variable-editor-row input,
         .variable-editor-row select,
-        .settings-variable-row input,
-        .settings-variable-row select {
+        .simulation-input-row input,
+        .simulation-input-row select {
             min-width: 0;
             box-sizing: border-box;
             padding: 8px;
@@ -57,19 +57,12 @@
         }
 
         .variable-editor-row button,
-        .settings-variable-row button,
-        .settings-variable-section > button {
+        .simulation-input-row button {
             padding: 7px 10px;
             border: 1px solid #cbd5e1;
             border-radius: 7px;
             background: #fff;
             cursor: pointer;
-        }
-
-        .settings-variable-section {
-            display: grid;
-            gap: 8px;
-            font: 600 13px system-ui, sans-serif;
         }
 
         :root {
@@ -424,7 +417,8 @@
             overflow-y: auto;
         }
 
-        .settings-dialog .program-editor-actions {
+        .settings-dialog .program-editor-actions,
+        .simulation-inputs-dialog .program-editor-actions {
             flex-wrap: wrap;
         }
 
@@ -465,10 +459,6 @@
             border-radius: 8px;
             font: 13px system-ui, sans-serif;
             user-select: text;
-        }
-
-        .settings-dialog .settings-inputs {
-            min-height: 90px;
         }
 
         .settings-error {
@@ -561,6 +551,17 @@
 
         .simulation-input-preview[hidden] {
             display: none;
+        }
+
+        .simulation-inputs-dialog {
+            max-height: calc(100dvh - 32px);
+            overflow-y: auto;
+        }
+
+        .simulation-input-list {
+            max-height: min(55vh, 420px);
+            overflow-y: auto;
+            padding: 4px;
         }
 
         .simulation-header {
@@ -807,7 +808,7 @@
                 grid-column: 2;
             }
 
-            .settings-variable-row {
+            .simulation-input-row {
                 grid-template-columns: minmax(0, 1fr) minmax(90px, 0.7fr) auto;
             }
 
