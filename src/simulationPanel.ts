@@ -151,7 +151,43 @@ export function initSimulationPanel() {
     splitter.setAttribute("aria-label", "Resize simulation panel");
     const panel = document.createElement("section");
     panel.className = "simulation-panel";
+    panel.id = "flowchart-simulation-panel";
     panel.setAttribute("aria-label", "Flowchart simulation");
+
+    const panelToggle = document.createElement("button");
+    panelToggle.type = "button";
+    panelToggle.className = "simulation-panel-toggle";
+    panelToggle.setAttribute("aria-controls", panel.id);
+    panelToggle.setAttribute("aria-expanded", "true");
+    panelToggle.setAttribute("aria-label", "Hide simulation panel");
+    panelToggle.title = "Hide simulation panel";
+    panelToggle.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 6-6 6 6 6"/></svg>';
+    let mobilePanelCollapsed = false;
+    const setMobilePanelCollapsed = (collapsed: boolean) => {
+        mobilePanelCollapsed = collapsed;
+        document.documentElement.classList.toggle("simulation-panel-collapsed", collapsed);
+        panelToggle.setAttribute("aria-expanded", String(!collapsed));
+        panelToggle.setAttribute("aria-label", `${collapsed ? "Show" : "Hide"} simulation panel`);
+        panelToggle.title = `${collapsed ? "Show" : "Hide"} simulation panel`;
+        panelToggle.innerHTML = collapsed
+            ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 6 6 6-6 6"/></svg>'
+            : '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 6-6 6 6 6"/></svg>';
+        panel.inert = collapsed;
+        panel.setAttribute("aria-hidden", String(collapsed));
+    };
+    panelToggle.addEventListener("click", () => setMobilePanelCollapsed(!mobilePanelCollapsed));
+    document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape" && window.matchMedia("(max-width: 760px)").matches && !mobilePanelCollapsed) {
+            setMobilePanelCollapsed(true);
+            panelToggle.focus();
+        }
+    });
+    window.addEventListener("resize", () => {
+        if (!window.matchMedia("(max-width: 760px)").matches && mobilePanelCollapsed) {
+            setMobilePanelCollapsed(false);
+        }
+    });
+    setMobilePanelCollapsed(false);
 
     const header = document.createElement("div");
     header.className = "simulation-header";
@@ -256,6 +292,7 @@ export function initSimulationPanel() {
     panel.append(header, controls, inputsPreview, tableWrapper, wholeOutputPanel, status);
     document.body.appendChild(panel);
     document.body.appendChild(splitter);
+    document.body.appendChild(panelToggle);
 
     const updateSplit = () => {
         document.documentElement.style.setProperty("--simulation-width", `${settings.simulationRatio * 100}vw`);
