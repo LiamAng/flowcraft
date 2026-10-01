@@ -110,7 +110,59 @@ export function initViewport(chart: HTMLElement, canvas: HTMLElement) {
         chart.classList.remove("pan-ready");
     });
 
+    const touchPoints = new Map<number, { x: number; y: number }>();
+    let pinch: { distance: number; zoom: number } | null = null;
+    let stopActivePan: (() => void) | null = null;
+
+    document.addEventListener("pointermove", (event: PointerEvent) => {
+        if (event.pointerType !== "touch" || !touchPoints.has(event.pointerId)) return;
+        touchPoints.set(event.pointerId, { x: event.clientX, y: event.clientY });
+        if (!pinch || touchPoints.size < 2) return;
+        const [first, second] = [...touchPoints.values()];
+        const distance = Math.hypot(second.x - first.x, second.y - first.y);
+        const centerX = (first.x + second.x) / 2;
+        const centerY = (first.y + second.y) / 2;
+        if (distance > 0) zoomAt(pinch.zoom * distance / pinch.distance, centerX, centerY);
+        event.preventDefault();
+    }, { passive: false });
+
+    const finishTouch = (event: PointerEvent) => {
+        if (event.pointerType !== "touch" || !touchPoints.has(event.pointerId)) return;
+        touchPoints.delete(event.pointerId);
+        if (pinch) {
+            pinch = null;
+            touchPoints.clear();
+        }
+    };
+    document.addEventListener("pointerup", finishTouch);
+    document.addEventListener("pointercancel", finishTouch);
+
     chart.addEventListener("pointerdown", (event: PointerEvent) => {
+        if (event.pointerType === "touch") {
+            touchPoints.set(event.pointerId, { x: event.clientX, y: event.clientY });
+            if (touchPoints.size >= 2) {
+                const [first, second] = [...touchPoints.values()];
+                const distance = Math.hypot(second.x - first.x, second.y - first.y);
+                const points = [...touchPoints.entries()];
+                stopActivePan?.();
+                stopActivePan = null;
+                points.forEach(([pointerId]) => {
+                    document.dispatchEvent(new PointerEvent("pointercancel", {
+                        bubbles: true,
+                        pointerId,
+                        pointerType: "touch",
+                        isPrimary: pointerId === event.pointerId,
+                        button: -1,
+                    }));
+                });
+                touchPoints.clear();
+                points.forEach(([pointerId, point]) => touchPoints.set(pointerId, point));
+                pinch = distance > 0 ? { distance, zoom: Shape.zoom } : null;
+                event.preventDefault();
+                event.stopImmediatePropagation();
+                return;
+            }
+        }
         const onBackground = event.target === chart || event.target === canvas;
         const touchBackgroundPan = event.pointerType === "touch" && (onBackground || Shape.readOnly);
         const wantsPan = event.button === 1 || (event.button === 0 && (spaceDown || touchBackgroundPan || (Shape.readOnly && onBackground)));
@@ -134,7 +186,9 @@ export function initViewport(chart: HTMLElement, canvas: HTMLElement) {
             document.removeEventListener("pointermove", onMove);
             document.removeEventListener("pointerup", onUp);
             document.removeEventListener("pointercancel", onUp);
+            stopActivePan = null;
         };
+        stopActivePan = onUp;
         document.addEventListener("pointermove", onMove);
         document.addEventListener("pointerup", onUp);
         document.addEventListener("pointercancel", onUp);

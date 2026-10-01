@@ -119,6 +119,7 @@ function renderPalette() {
         };
 
         item.addEventListener('pointerdown', (event: PointerEvent) => {
+            if (event.button !== 0 || !event.isPrimary) return;
             event.preventDefault();
             activate();
 
@@ -128,12 +129,23 @@ function renderPalette() {
             document.body.appendChild(preview);
 
             const move = (moveEvent: PointerEvent) => {
+                if (moveEvent.pointerId !== event.pointerId) return;
                 preview.style.left = `${moveEvent.clientX}px`;
                 preview.style.top = `${moveEvent.clientY}px`;
             };
 
+            const cleanup = () => {
+                preview.remove();
+                document.removeEventListener('pointermove', move);
+                document.removeEventListener('pointerup', drop);
+                document.removeEventListener('pointercancel', cancel);
+            };
+            const cancel = (cancelEvent: PointerEvent) => {
+                if (cancelEvent.pointerId === event.pointerId) cleanup();
+            };
             const drop = (upEvent: PointerEvent) => {
-                const element = document.elementFromPoint(upEvent.clientX, upEvent.clientY) as Element | null;
+                if (upEvent.pointerId !== event.pointerId) return;
+                const element = document.elementFromPoint(upEvent.clientX, upEvent.clientY);
                 const chartTarget = element?.closest('.chart');
                 const dropPoint = Shape.clientToCanvas(upEvent.clientX, upEvent.clientY);
                 const dropX = dropPoint.x;
@@ -161,14 +173,13 @@ function renderPalette() {
                     }
                 }
 
-                preview.remove();
-                document.removeEventListener('pointermove', move);
-                document.removeEventListener('pointerup', drop);
+                cleanup();
             };
 
             move(event);
             document.addEventListener('pointermove', move);
-            document.addEventListener('pointerup', drop, { once: true });
+            document.addEventListener('pointerup', drop);
+            document.addEventListener('pointercancel', cancel);
         });
 
         item.addEventListener('click', () => activate());

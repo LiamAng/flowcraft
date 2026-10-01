@@ -184,12 +184,15 @@ export function initSimulationPanel() {
             panelToggle.focus();
         }
     });
+    setMobilePanelCollapsed(mobilePanelCollapsed);
+    let wasMobile = mobilePanelCollapsed;
     window.addEventListener("resize", () => {
-        if (!window.matchMedia("(max-width: 760px)").matches && mobilePanelCollapsed) {
-            setMobilePanelCollapsed(mobilePanelCollapsed);
+        const isMobile = window.matchMedia("(max-width: 760px)").matches;
+        if (isMobile !== wasMobile) {
+            setMobilePanelCollapsed(isMobile);
+            wasMobile = isMobile;
         }
     });
-    setMobilePanelCollapsed(false);
 
     const header = document.createElement("div");
     header.className = "simulation-header";

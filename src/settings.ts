@@ -28,7 +28,11 @@ export const defaultSettings: Settings = {
     description: "",
     decisionBranchLabels: "yes-no",
     readOnly: false,
-    snap: true,
+    snap: typeof window !== "undefined" &&
+        typeof window.matchMedia === "function" &&
+        window.matchMedia("(max-width: 760px)").matches
+        ? false
+        : true,
     gridSize: 40,
     guides: true,
     showGrid: true,
@@ -94,6 +98,9 @@ export function applySettings(patch: Partial<Settings>) {
         patch.decisionBranchLabels !== settings.decisionBranchLabels;
     Object.assign(settings, sanitizeSettings(patch));
     Shape.readOnly = settings.readOnly;
+    Shape.snapEnabled = settings.snap;
+    Shape.gridSize = settings.gridSize;
+    Shape.guidesEnabled = settings.guides;
     Shape.showSimulationFlowline = settings.showSteps;
     Shape.decisionBranchLabels = settings.decisionBranchLabels;
     document.documentElement.classList.toggle("read-only", settings.readOnly);
