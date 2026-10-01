@@ -1,15 +1,32 @@
 import { Decision, Initialization, InputOutput, Shape } from "./shapes";
 import { settings } from "./settings";
 
-function currentPrefix(shape: Shape, fallback: string): string {
+export function getShapeContentPrefix(shape: Shape): string {
+    const fallback = shape instanceof InputOutput
+        ? shape.inputOutputType === "input" ? "Input" : "Output"
+        : shape instanceof Initialization ? "Initialize" : "Is";
+    const content = shape.content.innerText.replace(/\r\n?/g, "\n").trim();
+    if (shape instanceof Decision) {
+        const expression = shape.programCode.trim();
+        const suffix = expression ? ` (${expression})` : "";
+        if (suffix && content.endsWith(suffix)) return content.slice(0, -suffix.length).trim() || fallback;
+        return content.split("\n", 1)[0].trim() || fallback;
+    }
     const prefix = shape.content.innerText.replace(/\r\n?/g, "\n").split("\n", 1)[0].trim();
-    if (!prefix || (shape instanceof Initialization && prefix === "Initialize")) return fallback;
+    if (!prefix || (
+        shape instanceof Initialization &&
+        prefix !== "Initialize" &&
+        /^[A-Za-z_$][\w$]*\s*=/.test(prefix)
+    )) return fallback;
     return prefix;
 }
 
+export function isProgramGeneratedShape(shape: Shape): boolean {
+    return shape instanceof InputOutput || shape instanceof Initialization || shape instanceof Decision;
+}
+
 export function updateShapeContentFromProgram(shape: Shape): void {
-    const isDerivedShape = shape instanceof InputOutput || shape instanceof Initialization || shape instanceof Decision;
-    const isProgramDerived = settings.setShapeContentBasedOnProgram && isDerivedShape;
+    const isProgramDerived = settings.setShapeContentBasedOnProgram && isProgramGeneratedShape(shape);
     shape.content.dataset.programDerived = String(isProgramDerived);
     shape.content.title = isProgramDerived
         ? "This content is generated from the program. Edit the program to change it."
@@ -18,8 +35,7 @@ export function updateShapeContentFromProgram(shape: Shape): void {
     if (!isProgramDerived) return;
 
     if (shape instanceof InputOutput) {
-        const defaultPrefix = shape.inputOutputType === "input" ? "Input" : "Output";
-        const prefix = currentPrefix(shape, defaultPrefix);
+        const prefix = getShapeContentPrefix(shape);
         const details = shape.inputOutputType === "input"
             ? (shape.variables.length > 0
                 ? shape.variables.map(({ name }) => name)
@@ -31,16 +47,21 @@ export function updateShapeContentFromProgram(shape: Shape): void {
     }
 
     if (shape instanceof Initialization) {
-        shape.content.textContent = shape.variables
+        const prefix = getShapeContentPrefix(shape);
+        const details = shape.variables
             .filter(({ name }) => Boolean(name))
             .map(({ name, value }) => `${name} = ${value === undefined ? "" : String(value)}`)
             .join("\n");
+        shape.content.textContent = prefix === "Initialize"
+            ? details
+            : details ? `${prefix}\n${details}` : prefix;
         return;
     }
 
     if (shape instanceof Decision) {
+        const prefix = getShapeContentPrefix(shape);
         const expression = shape.programCode.trim();
-        shape.content.textContent = expression ? `Is (${expression})` : "Is";
+        shape.content.textContent = expression ? `${prefix} (${expression})` : prefix;
     }
 }
 

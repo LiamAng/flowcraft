@@ -1,11 +1,13 @@
 import { Decision, Initialization, InputOutput, Shape, type VariableDefinition } from "./shapes";
 import { settings } from "./settings";
-import { updateShapeContentFromProgram } from "./programContent";
+import { getShapeContentPrefix, isProgramGeneratedShape, updateShapeContentFromProgram } from "./programContent";
 
 let dialog: HTMLDialogElement | null = null;
 let editor: HTMLTextAreaElement | null = null;
 let variableEditor: HTMLDivElement | null = null;
 let dialogTitle: HTMLHeadingElement | null = null;
+let prefixInput: HTMLInputElement | null = null;
+let prefixLabel: HTMLLabelElement | null = null;
 let help: HTMLParagraphElement | null = null;
 let error: HTMLParagraphElement | null = null;
 let activeShape: Shape | null = null;
@@ -140,6 +142,9 @@ function createDialog() {
         } else if (editor) {
             activeShape.programCode = editor.value;
         }
+        if (activeShape && prefixInput && !prefixLabel?.hidden) {
+            activeShape.content.textContent = prefixInput.value.trim();
+        }
         updateShapeContentFromProgram(activeShape);
         Shape.notifyDiagramChange();
         element.close();
@@ -147,6 +152,13 @@ function createDialog() {
 
     const title = document.createElement("h2");
     dialogTitle = title;
+    prefixLabel = document.createElement("label");
+    prefixLabel.textContent = "Shape content prefix";
+    prefixInput = document.createElement("input");
+    prefixInput.type = "text";
+    prefixInput.maxLength = 80;
+    prefixInput.setAttribute("aria-label", "Shape content prefix");
+    prefixLabel.appendChild(prefixInput);
     const codeLabel = document.createElement("label");
     codeLabel.textContent = "Code";
     editor = document.createElement("textarea");
@@ -178,7 +190,7 @@ function createDialog() {
     save.type = "submit";
     save.textContent = "Save";
     actions.append(cancel, save);
-    form.append(title, codeLabel, variableEditor, addVariable, help, error, actions);
+    form.append(title, prefixLabel, codeLabel, variableEditor, addVariable, help, error, actions);
     element.appendChild(form);
     element.addEventListener("close", () => {
         activeShape = null;
@@ -189,7 +201,7 @@ function createDialog() {
 
 export function openProgramEditor(shape: Shape) {
     if (!dialog || !editor || !variableEditor || !help || !error) createDialog();
-    if (!dialog || !editor || !variableEditor || !help || !error) {
+    if (!dialog || !editor || !variableEditor || !help || !error || !prefixInput || !prefixLabel) {
         throw new Error("Failed to initialize the shape editor.");
     }
     activeShape = shape;
@@ -200,6 +212,9 @@ export function openProgramEditor(shape: Shape) {
 
     const isInput = shape instanceof InputOutput && shape.inputOutputType === "input";
     const isInitialization = shape instanceof Initialization;
+    const showPrefix = settings.setShapeContentBasedOnProgram && isProgramGeneratedShape(shape);
+    prefixLabel.hidden = !showPrefix;
+    prefixInput.value = showPrefix ? getShapeContentPrefix(shape) : "";
     const codeLabel = editor.parentElement as HTMLLabelElement;
     const addVariable = dialog.querySelector<HTMLButtonElement>(".program-editor-add-variable");
     codeLabel.hidden = isInput || isInitialization;
@@ -231,6 +246,9 @@ export function openProgramEditor(shape: Shape) {
         }
     }
     help.textContent = guidance;
+    if (showPrefix) {
+        help.textContent += " This is the prefix from the current shape content; it appears before the generated content.";
+    }
     dialog.showModal();
     (isInput || isInitialization ? variableRows[0]?.name : editor)?.focus();
 }
