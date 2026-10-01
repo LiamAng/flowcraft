@@ -80,9 +80,17 @@
         .chart {
             position: relative;
             width: 100vw;
-            height: 100vh;
+            min-height: 0;
+            flex: 1 1 auto;
             overflow: hidden;
             touch-action: none;
+        }
+
+        .flowchart-shell {
+            display: flex;
+            width: 100vw;
+            height: 100vh;
+            flex-direction: column;
         }
 
         .chart.pan-ready,
@@ -125,13 +133,12 @@
         }
 
         .flowchart-heading {
-            position: absolute;
-            top: 14px;
-            left: 50%;
+            position: relative;
             z-index: 5;
-            width: max-content;
-            max-width: calc(100% - 24px);
-            transform: translateX(-50%);
+            box-sizing: border-box;
+            width: 100%;
+            flex: 0 0 auto;
+            padding: 10px 100px;
             color: #334155;
             text-align: center;
             pointer-events: none;
@@ -181,8 +188,11 @@
 
         .simulation-layout .chart {
             position: relative;
+            width: 100%;
+        }
+
+        .simulation-layout .flowchart-shell {
             width: calc(100vw - var(--simulation-width));
-            height: 100vh;
         }
 
         .simulation-splitter {
@@ -700,8 +710,15 @@
                 --simulation-height: clamp(190px, 38dvh, 320px);
             }
 
+            .flowchart-shell,
+            .simulation-layout .flowchart-shell {
+                width: 100vw;
+                height: calc(100vh - var(--simulation-height));
+                height: calc(100dvh - var(--simulation-height));
+            }
+
             .chart {
-                height: 100dvh;
+                width: 100%;
             }
 
             .variable-editor-row {
@@ -725,9 +742,7 @@
             }
 
             .simulation-layout .chart {
-                width: 100vw;
-                height: calc(100vh - var(--simulation-height));
-                height: calc(100dvh - var(--simulation-height));
+                width: 100%;
             }
 
             .canvas-zoom {
@@ -785,8 +800,7 @@
             }
 
             .flowchart-heading {
-                top: 92px;
-                max-width: calc(100% - 24px);
+                padding: 52px 72px 10px;
             }
 
             .controls {
@@ -1556,8 +1570,10 @@
 </head>
 <body>
     <div id="shape-palette" class="controls" aria-label="Shape palette"></div>
-    <div class="chart">
+    <div class="flowchart-shell">
         <header class="flowchart-heading" aria-live="polite"></header>
+        <div class="chart">
+        </div>
     </div>
     <script src="src/index.ts" type="module"></script>
 </body>
