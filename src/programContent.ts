@@ -6,6 +6,22 @@ export function getShapeContentPrefix(shape: Shape): string {
         ? shape.inputOutputType === "input" ? "Input" : "Output"
         : shape instanceof Initialization ? "Initialize" : "Is";
     const content = shape.content.innerText.replace(/\r\n?/g, "\n").trim();
+    if ((shape instanceof InputOutput && shape.inputOutputType === "input") ||
+        shape instanceof Initialization) {
+        const details = shape instanceof Initialization
+            ? shape.variables
+                .filter(({ name }) => Boolean(name))
+                .map(({ name, value }) => `${name} = ${value === undefined ? "" : String(value)}`)
+                .join("\n")
+            : (shape.variables.length > 0
+                ? shape.variables.map(({ name }) => name)
+                : shape.programCode.split(",").map((name) => name.trim()).filter(Boolean)
+            ).join(", ");
+        if (details && !content.includes("\n") && content.endsWith(details)) {
+            const prefix = content.slice(0, -details.length).replace(/[\s,:;|/-]+$/, "").trim();
+            return prefix || fallback;
+        }
+    }
     if (shape instanceof Decision) {
         const expression = shape.programCode.trim();
         const suffix = expression ? ` (${expression})` : "";
