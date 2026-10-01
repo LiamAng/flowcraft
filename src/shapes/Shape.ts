@@ -67,6 +67,7 @@ export class Shape {
     protected static selectedLinkPosition: { link: LinkRecord; point: Point } | null = null;
     protected static deselectionTimer: number | null = null;
     protected static generatedContentWarning: HTMLDialogElement | null = null;
+    protected static warningEditCallback: (() => void) | null = null;
     protected static deleteHooked = false;
     protected static connectionRenderScheduled = false;
     protected static lastLineClick: { link: LinkRecord; time: number } | null = null;
@@ -164,7 +165,27 @@ export class Shape {
         }
     }
 
-    protected static showProgramSettingWarning(titleText: string, messageText: string, settingNameText: string) {
+    protected static showProgramSettingWarning(
+        titleText: string,
+        messageText: string,
+        settingNameText: string,
+        preferenceKey: string,
+        onEdit: () => void,
+        alwaysEditPreferenceKey?: string,
+    ) {
+        let dismissed = false;
+        let alwaysEditSaved = false;
+        try {
+            dismissed = localStorage.getItem(preferenceKey) === "true";
+            alwaysEditSaved = Boolean(alwaysEditPreferenceKey && localStorage.getItem(alwaysEditPreferenceKey) === "true");
+        } catch (error) {
+            console.error("Could not read the program warning preferences.", error);
+        }
+        if (dismissed || alwaysEditSaved) {
+            onEdit();
+            return;
+        }
+
         if (!Shape.generatedContentWarning) {
             const dialog = document.createElement("dialog");
             dialog.className = "generated-content-warning";
@@ -176,14 +197,62 @@ export class Shape {
             const message = document.createElement("p");
             message.id = "generated-content-warning-message";
             const settingName = document.createElement("strong");
-            const button = document.createElement("button");
-            button.type = "button";
-            button.textContent = "Got it";
-            button.addEventListener("click", () => dialog.close());
-            dialog.append(title, message, button);
+            const dontShowAgainLabel = document.createElement("label");
+            dontShowAgainLabel.className = "generated-content-warning-choice";
+            const dontShowAgain = document.createElement("input");
+            dontShowAgain.type = "checkbox";
+            dontShowAgain.setAttribute("aria-label", "Don't show this warning again");
+            dontShowAgainLabel.append(dontShowAgain, document.createTextNode("Don't show this again"));
+            const alwaysEditLabel = document.createElement("label");
+            alwaysEditLabel.className = "generated-content-warning-choice";
+            const alwaysEdit = document.createElement("input");
+            alwaysEdit.type = "checkbox";
+            alwaysEdit.setAttribute("aria-label", "Always open the edit dialog on double click");
+            alwaysEditLabel.append(alwaysEdit, document.createTextNode("Always open the edit dialog on double click"));
+            const actions = document.createElement("div");
+            actions.className = "generated-content-warning-actions";
+            const editButton = document.createElement("button");
+            editButton.type = "button";
+            editButton.className = "secondary";
+            editButton.textContent = "Edit program";
+            const dismissButton = document.createElement("button");
+            dismissButton.type = "button";
+            dismissButton.textContent = "Got it";
+            actions.append(editButton, dismissButton);
+            dialog.append(title, message, dontShowAgainLabel, alwaysEditLabel, actions);
             document.body.appendChild(dialog);
             Shape.generatedContentWarning = dialog;
             message.appendChild(settingName);
+            dialog.dataset.preferenceKey = "";
+            const close = (edit: boolean) => {
+                if (dontShowAgain.checked) {
+                    try {
+                        localStorage.setItem(dialog.dataset.preferenceKey ?? "", "true");
+                    } catch (error) {
+                        console.error("Could not save the program warning preference.", error);
+                    }
+                }
+                if (alwaysEdit.checked) {
+                    try {
+                        const key = dialog.dataset.alwaysEditKey;
+                        if (key) localStorage.setItem(key, "true");
+                    } catch (error) {
+                        console.error("Could not save the always-edit preference.", error);
+                    }
+                }
+                if (edit) {
+                    dialog.addEventListener("close", () => {
+                        const callback = Shape.warningEditCallback;
+                        Shape.warningEditCallback = null;
+                        callback?.();
+                    }, { once: true });
+                } else {
+                    Shape.warningEditCallback = null;
+                }
+                dialog.close();
+            };
+            editButton.addEventListener("click", () => close(true));
+            dismissButton.addEventListener("click", () => close(false));
         }
 
         const dialog = Shape.generatedContentWarning;
@@ -194,10 +263,19 @@ export class Shape {
             throw new Error("Failed to initialize the program setting warning.");
         }
         title.textContent = titleText;
+        const dontShowAgain = dialog.querySelector<HTMLInputElement>(".generated-content-warning-choice input");
+        const alwaysEdit = dialog.querySelector<HTMLInputElement>(".generated-content-warning-choice input[aria-label='Always open the edit dialog on double click']");
+        if (!dontShowAgain || !alwaysEdit) throw new Error("Failed to initialize the program warning preferences.");
+        dontShowAgain.checked = false;
+        alwaysEdit.checked = false;
+        dialog.dataset.preferenceKey = preferenceKey;
+        dialog.dataset.alwaysEditKey = alwaysEditPreferenceKey ?? "";
+        alwaysEdit.closest("label")!.hidden = !alwaysEditPreferenceKey;
         message.replaceChildren(document.createTextNode(`${messageText} `), settingName, document.createTextNode(" in Settings."));
         settingName.textContent = settingNameText;
+        Shape.warningEditCallback = onEdit;
         Shape.generatedContentWarning.showModal();
-        Shape.generatedContentWarning.querySelector("button")?.focus();
+        dialog.querySelector<HTMLButtonElement>(".generated-content-warning-actions button")?.focus();
     }
 
     protected isProcessShape(): boolean {
@@ -1611,6 +1689,9 @@ export class Shape {
                 window.clearTimeout(Shape.deselectionTimer);
                 Shape.deselectionTimer = null;
             }
+            if (Shape.readOnly) {
+                return;
+            }
             if (this.content.dataset.programDerived === "true") {
                 event.preventDefault();
                 event.stopPropagation();
@@ -1618,10 +1699,10 @@ export class Shape {
                     "Shape content is generated automatically",
                     "This shape's content is generated from its program. To edit it directly, turn off",
                     "Automatically generate shape content from program",
+                    "flowcraft.dismiss-generated-content-warning.v1",
+                    () => openProgramEditor(this),
+                    "flowcraft.dismiss-generated-content-warning.v1.always-edit",
                 );
-                return;
-            }
-            if (Shape.readOnly) {
                 return;
             }
             event.stopPropagation();
@@ -1683,6 +1764,8 @@ export class Shape {
                         "Process text is used as code",
                         "Simulation runs the text displayed inside this Process shape. Turn off this setting to edit the visible label and the code used during simulation separately.",
                         "Run Process shape text as code",
+                        "flowcraft.dismiss-process-code-warning.v1",
+                        () => openProgramEditor(this),
                     );
                     return;
                 }

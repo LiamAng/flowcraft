@@ -1484,9 +1484,30 @@
             line-height: 1.5;
         }
 
-        .generated-content-warning button {
-            display: block;
-            margin-left: auto;
+        .generated-content-warning-choice {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 18px;
+            color: #475569;
+            font: 13px system-ui, sans-serif;
+        }
+
+        .generated-content-warning-choice[hidden] {
+            display: none;
+        }
+
+        .generated-content-warning-choice input {
+            margin: 0;
+        }
+
+        .generated-content-warning-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 8px;
+        }
+
+        .generated-content-warning-actions button {
             padding: 8px 14px;
             border: 1px solid cornflowerblue;
             border-radius: 7px;
@@ -1494,6 +1515,12 @@
             color: #fff;
             font: 600 14px system-ui, sans-serif;
             cursor: pointer;
+        }
+
+        .generated-content-warning-actions button.secondary {
+            border-color: #cbd5e1;
+            background: #fff;
+            color: #334155;
         }
 
         .program-editor form {
@@ -1527,6 +1554,25 @@
             background: #f8fafc;
             font: 13px/1.5 Consolas, monospace;
             user-select: text;
+        }
+
+        .program-editor > form > label > input[type="text"] {
+            box-sizing: border-box;
+            width: 100%;
+            min-height: 38px;
+            padding: 8px 10px;
+            border: 1px solid #cbd5e1;
+            border-radius: 8px;
+            background: #fff;
+            color: #0f172a;
+            font: 14px system-ui, sans-serif;
+            user-select: text;
+        }
+
+        .program-editor > form > label > input[type="text"]:focus {
+            border-color: cornflowerblue;
+            outline: 3px solid rgba(100, 149, 237, 0.24);
+            outline-offset: 1px;
         }
 
         .share-link-dialog {
