@@ -29,7 +29,16 @@ export function getShapeContentPrefix(shape: Shape): string {
         const expression = shape.programCode.trim();
         const suffix = expression ? ` (${expression})` : "";
         if (suffix && content.endsWith(suffix)) return content.slice(0, -suffix.length).trim() || fallback;
-        return content.split("\n", 1)[0].trim() || fallback;
+        const line = content.split("\n", 1)[0].trim();
+        if (expression && line.endsWith(expression)) {
+            let prefix = line.slice(0, -expression.length);
+            if (prefix && /[\w$]/.test(prefix.slice(-1)) && /^[\w$]/.test(expression)) {
+                return line || fallback;
+            }
+            if (prefix.endsWith("(")) prefix = prefix.slice(0, -1);
+            return prefix.replace(/[\s,:;|/-]+$/, "").trim() || fallback;
+        }
+        return line || fallback;
     }
     const prefix = shape.content.innerText.replace(/\r\n?/g, "\n").split("\n", 1)[0].trim();
     if (!prefix || (

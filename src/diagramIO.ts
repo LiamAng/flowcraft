@@ -4,6 +4,7 @@ import { initSettingsPanel } from "./settingsPanel";
 import { initProjectHistory } from "./projectHistory";
 import { settings } from "./settings";
 import { createShareUrl, isShareUrl, readShareUrl } from "./shareLink";
+import { validateFlowchart } from "./flowValidation";
 
 export async function initDiagramIO(
     addShape: (shape: Shape) => Shape,
@@ -96,6 +97,11 @@ export async function initDiagramIO(
     shareDialog.appendChild(shareForm);
     document.body.appendChild(shareDialog);
     const shareLink = async () => {
+        const issues = validateFlowchart();
+        if (issues.length > 0) {
+            report(`Fix all flowchart warnings before sharing. ${issues.join(" ")}`, true);
+            return;
+        }
         try {
             shareField.value = await createShareUrl(exportDiagramJson(false));
             shareDialog.showModal();

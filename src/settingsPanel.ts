@@ -1,4 +1,5 @@
 import { applySettings, defaultSettings, settings, type Settings } from "./settings";
+import { validateFlowchart } from "./flowValidation";
 
 export function initSettingsPanel(fileActions: { exportDiagram: () => void; exportImage: () => void; importDiagram: () => void; shareLink: () => void; newProject: () => boolean }): HTMLButtonElement {
     const button = document.createElement("button");
@@ -42,6 +43,21 @@ export function initSettingsPanel(fileActions: { exportDiagram: () => void; expo
     const error = document.createElement("p");
     error.className = "settings-error";
     error.hidden = true;
+    const shareValidationDialog = document.createElement("dialog");
+    shareValidationDialog.className = "program-editor share-validation-dialog";
+    const shareValidationTitle = document.createElement("h2");
+    shareValidationTitle.textContent = "Can't share flowchart";
+    const shareValidationMessage = document.createElement("p");
+    shareValidationMessage.textContent = "Fix these flowchart warnings before creating a share link:";
+    const shareValidationIssues = document.createElement("ul");
+    const shareValidationActions = document.createElement("div");
+    shareValidationActions.className = "program-editor-actions";
+    const closeShareValidation = document.createElement("button");
+    closeShareValidation.type = "button";
+    closeShareValidation.textContent = "Close";
+    closeShareValidation.addEventListener("click", () => shareValidationDialog.close());
+    shareValidationActions.appendChild(closeShareValidation);
+    shareValidationDialog.append(shareValidationTitle, shareValidationMessage, shareValidationIssues, shareValidationActions);
 
     const checkbox = (key: "snap" | "snapResizeToGrid" | "guides" | "showGrid" | "readOnly" | "showSteps" | "showStepNumbers" | "showShapeContentInSteps" | "processContentAsCode" | "setShapeContentBasedOnProgram" | "compressSimulationTable" | "collapseConsecutiveConditions" | "collapseOtherSteps" | "autorun", text: string) => {
         const label = document.createElement("label");
@@ -160,6 +176,16 @@ export function initSettingsPanel(fileActions: { exportDiagram: () => void; expo
     shareButton.type = "button";
     shareButton.textContent = "Share link";
     shareButton.addEventListener("click", () => {
+        const issues = validateFlowchart();
+        if (issues.length > 0) {
+            shareValidationIssues.replaceChildren(...issues.map((issue) => {
+                const item = document.createElement("li");
+                item.textContent = issue;
+                return item;
+            }));
+            shareValidationDialog.showModal();
+            return;
+        }
         dialog.close();
         fileActions.shareLink();
     });
@@ -177,6 +203,7 @@ export function initSettingsPanel(fileActions: { exportDiagram: () => void; expo
     form.append(title, chartTitleLabel, descriptionLabel, branchLabelsLabel, ...checks.map((c) => c.label), gridLabel, ratioLabel, accuracyLabel, stepContentWidthLabel, speedLabel, error, actionBar);
     dialog.appendChild(form);
     document.body.appendChild(dialog);
+    document.body.appendChild(shareValidationDialog);
 
     const fill = (values: Settings) => {
         chartTitleInput.value = values.title;
@@ -196,6 +223,9 @@ export function initSettingsPanel(fileActions: { exportDiagram: () => void; expo
     button.addEventListener("click", () => {
         fill(settings);
         dialog.showModal();
+    });
+    dialog.addEventListener("click", (event) => {
+        if (event.target === dialog) dialog.close();
     });
     reset.addEventListener("click", () => fill(defaultSettings));
     cancel.addEventListener("click", () => dialog.close());

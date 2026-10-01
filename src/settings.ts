@@ -29,25 +29,21 @@ export type Settings = {
 export const defaultSettings: Settings = {
     title: "",
     description: "",
-    decisionBranchLabels: "yes-no",
+    decisionBranchLabels: "true-false",
     readOnly: false,
-    snap: typeof window !== "undefined" &&
-        typeof window.matchMedia === "function" &&
-        window.matchMedia("(max-width: 760px)").matches
-        ? false
-        : true,
+    snap: false,
     snapResizeToGrid: false,
     gridSize: 40,
     guides: true,
     showGrid: true,
     showSteps: false,
     showStepNumbers: true,
-    showShapeContentInSteps: false,
-    processContentAsCode: false,
+    showShapeContentInSteps: true,
+    processContentAsCode: true,
     setShapeContentBasedOnProgram: true,
-    compressSimulationTable: false,
-    collapseConsecutiveConditions: false,
-    collapseOtherSteps: false,
+    compressSimulationTable: true,
+    collapseConsecutiveConditions: true,
+    collapseOtherSteps: true,
     autorun: true,
     inputs: {},
     simulationRatio: 0.32,
