@@ -161,7 +161,7 @@ export function initSimulationPanel() {
     panelToggle.setAttribute("aria-expanded", "true");
     panelToggle.setAttribute("aria-label", "Hide simulation panel");
     panelToggle.title = "Hide simulation panel";
-    panelToggle.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 6-6 6 6 6"/></svg>';
+    panelToggle.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 6 6 6-6 6"/></svg>';
     let mobilePanelCollapsed = false;
     const setMobilePanelCollapsed = (collapsed: boolean) => {
         mobilePanelCollapsed = collapsed;
@@ -170,8 +170,8 @@ export function initSimulationPanel() {
         panelToggle.setAttribute("aria-label", `${collapsed ? "Show" : "Hide"} simulation panel`);
         panelToggle.title = `${collapsed ? "Show" : "Hide"} simulation panel`;
         panelToggle.innerHTML = collapsed
-            ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 6 6 6-6 6"/></svg>'
-            : '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 6-6 6 6 6"/></svg>';
+            ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 6-6 6 6 6"/></svg>'
+            : '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 6 6 6-6 6"/></svg>';
         panel.inert = collapsed;
         panel.setAttribute("aria-hidden", String(collapsed));
     };

@@ -193,4 +193,21 @@ initSelection(chart);
 initTooltip();
 initFlowValidation();
 const autorun = initSimulationPanel();
-void initDiagramIO(addShape, viewport.fit, autorun);
+const loadingScreen = document.querySelector<HTMLElement>(".app-loading");
+const hideLoadingScreen = () => {
+    if (!loadingScreen) return;
+    loadingScreen.classList.add("is-hidden");
+    window.setTimeout(() => loadingScreen.remove(), 250);
+};
+void initDiagramIO(addShape, viewport.fit, autorun).then(() => {
+    void document.fonts.ready.then(() => {
+        window.requestAnimationFrame(hideLoadingScreen);
+    });
+}).catch((error: unknown) => {
+    const message = error instanceof Error ? error.message : "Flowcraft could not finish loading.";
+    if (loadingScreen) {
+        loadingScreen.setAttribute("role", "alert");
+        loadingScreen.replaceChildren(document.createTextNode(message));
+    }
+    console.error("Flowcraft initialization failed.", error);
+});
