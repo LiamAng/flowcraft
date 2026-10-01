@@ -1,6 +1,6 @@
 import { exportDiagramJson, importDiagramJson } from "./diagramFile";
 import { Shape } from "./shapes";
-import { applySettings, defaultSettings } from "./settings";
+import { applySettings, defaultSettings, settings } from "./settings";
 
 const STORAGE_KEY = "flowcraft.local-project.v1";
 const MAX_HISTORY = 100;
@@ -13,6 +13,9 @@ export function initProjectHistory(addShape: (shape: Shape) => Shape, fitView: (
     const controls: HTMLButtonElement[] = [];
 
     const updateControls = () => {
+        controls.forEach((button) => {
+            button.hidden = settings.readOnly;
+        });
         controls[0].disabled = historyIndex === 0;
         controls[1].disabled = historyIndex >= history.length - 1;
     };
@@ -92,6 +95,7 @@ export function initProjectHistory(addShape: (shape: Shape) => Shape, fitView: (
 
     document.addEventListener("flowcraft:diagramchange", scheduleCommit);
     document.addEventListener("flowcraft:settings", scheduleCommit);
+    document.addEventListener("flowcraft:settings", updateControls);
     document.addEventListener("keydown", (event) => {
         const target = event.target;
         if (target instanceof HTMLElement &&
@@ -99,7 +103,7 @@ export function initProjectHistory(addShape: (shape: Shape) => Shape, fitView: (
                 target instanceof HTMLTextAreaElement || target.closest("dialog"))) {
             return;
         }
-        if (!(event.ctrlKey || event.metaKey) || event.altKey) return;
+        if (settings.readOnly || !(event.ctrlKey || event.metaKey) || event.altKey) return;
         const key = event.key.toLowerCase();
         if (key === "z") {
             event.preventDefault();
