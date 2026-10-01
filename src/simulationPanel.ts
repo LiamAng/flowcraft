@@ -332,7 +332,7 @@ export function initSimulationPanel() {
         const showOutputColumn = !(current === null && wholeOutput.length === 1);
         const head = document.createElement("thead");
         const headerRow = document.createElement("tr");
-        const columnTitles = [ ...(settings.showStepNumbers ? ["Step"] : []), ...variableNames, ...decisionShapes.map((shape) => `Condition: ${shape.content.textContent?.trim() || shape.id}`), ...(showOutputColumn ? ["Output"] : [])];
+        const columnTitles = [ ...(settings.showStepNumbers ? ["Step"] : []), ...variableNames, ...decisionShapes.map((shape) => shape.content.textContent?.trim() || shape.id), ...(showOutputColumn ? ["Output"] : [])];
         columnTitles.forEach((title, index, all) => {
             const cell = document.createElement("th");
             cell.textContent = title;
