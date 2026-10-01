@@ -14,6 +14,10 @@ export function initViewport(chart: HTMLElement, canvas: HTMLElement) {
 
     const render = () => {
         canvas.style.transform = `translate(${Shape.panX}px, ${Shape.panY}px) scale(${Shape.zoom})`;
+        canvas.style.setProperty("--ui-inverse-zoom", String(1 / Shape.zoom));
+        canvas.style.setProperty("--ui-offset-18", `${18 / Shape.zoom}px`);
+        canvas.style.setProperty("--ui-offset-negative-18", `${-18 / Shape.zoom}px`);
+        canvas.style.setProperty("--ui-offset-negative-40", `${-40 / Shape.zoom}px`);
         level.textContent = `${Math.round(Shape.zoom * 100)}%`;
         const size = settings.gridSize * Shape.zoom;
         const dotRadius = Math.max(0.35, Shape.zoom);
@@ -40,12 +44,35 @@ export function initViewport(chart: HTMLElement, canvas: HTMLElement) {
     let targetWheelZoom = Shape.zoom;
     let wheelZoomCenter = { x: 0, y: 0 };
     let wheelZoomFrame = 0;
+    let targetWheelPan = { x: Shape.panX, y: Shape.panY };
+    let wheelPanFrame = 0;
+    const stopWheelPan = () => {
+        if (wheelPanFrame) window.cancelAnimationFrame(wheelPanFrame);
+        wheelPanFrame = 0;
+        targetWheelPan = { x: Shape.panX, y: Shape.panY };
+    };
     const stopWheelZoom = () => {
         if (wheelZoomFrame) window.cancelAnimationFrame(wheelZoomFrame);
         wheelZoomFrame = 0;
         targetWheelZoom = Shape.zoom;
     };
+    const animateWheelPan = () => {
+        const remainingX = targetWheelPan.x - Shape.panX;
+        const remainingY = targetWheelPan.y - Shape.panY;
+        if (Math.hypot(remainingX, remainingY) < 0.35) {
+            Shape.panX = targetWheelPan.x;
+            Shape.panY = targetWheelPan.y;
+            wheelPanFrame = 0;
+            render();
+            return;
+        }
+        Shape.panX += remainingX * 0.22;
+        Shape.panY += remainingY * 0.22;
+        render();
+        wheelPanFrame = window.requestAnimationFrame(animateWheelPan);
+    };
     const centreZoom = (zoom: number) => {
+        stopWheelPan();
         stopWheelZoom();
         targetWheelZoom = zoom;
         const rect = chart.getBoundingClientRect();
@@ -63,6 +90,7 @@ export function initViewport(chart: HTMLElement, canvas: HTMLElement) {
     };
 
     const fit = () => {
+        stopWheelPan();
         stopWheelZoom();
         const rect = chart.getBoundingClientRect();
         if (Shape.all.length === 0) {
@@ -106,6 +134,7 @@ export function initViewport(chart: HTMLElement, canvas: HTMLElement) {
     chart.addEventListener("wheel", (event: WheelEvent) => {
         event.preventDefault();
         if (event.ctrlKey || event.metaKey) {
+            stopWheelPan();
             const deltaScale = event.deltaMode === WheelEvent.DOM_DELTA_LINE ? 16
                 : event.deltaMode === WheelEvent.DOM_DELTA_PAGE ? chart.clientHeight
                 : 1;
@@ -121,9 +150,16 @@ export function initViewport(chart: HTMLElement, canvas: HTMLElement) {
             return;
         }
         stopWheelZoom();
-        Shape.panX -= event.shiftKey && event.deltaX === 0 ? event.deltaY : event.deltaX;
-        Shape.panY -= event.shiftKey && event.deltaX === 0 ? 0 : event.deltaY;
-        render();
+        if (wheelPanFrame === 0) {
+            targetWheelPan = { x: Shape.panX, y: Shape.panY };
+        }
+        const panX = event.shiftKey && event.deltaX === 0 ? event.deltaY : event.deltaX;
+        const panY = event.shiftKey && event.deltaX === 0 ? 0 : event.deltaY;
+        targetWheelPan.x -= panX;
+        targetWheelPan.y -= panY;
+        if (wheelPanFrame === 0) {
+            wheelPanFrame = window.requestAnimationFrame(animateWheelPan);
+        }
     }, { passive: false });
 
     let spaceDown = false;
@@ -199,6 +235,8 @@ export function initViewport(chart: HTMLElement, canvas: HTMLElement) {
                 pinch = distance > 0 ? { distance, zoom: Shape.zoom } : null;
                 event.preventDefault();
                 event.stopImmediatePropagation();
+                stopWheelPan();
+                stopWheelZoom();
                 return;
             }
         }
@@ -208,6 +246,8 @@ export function initViewport(chart: HTMLElement, canvas: HTMLElement) {
         if (!wantsPan || Shape.pendingLink) return;
         event.preventDefault();
         event.stopImmediatePropagation();
+        stopWheelPan();
+        stopWheelZoom();
 
         const startX = event.clientX;
         const startY = event.clientY;
