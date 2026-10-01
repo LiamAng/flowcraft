@@ -43,7 +43,7 @@ export function initSettingsPanel(fileActions: { exportDiagram: () => void; expo
     error.className = "settings-error";
     error.hidden = true;
 
-    const checkbox = (key: "snap" | "guides" | "showGrid" | "readOnly" | "showSteps" | "showStepNumbers" | "showShapeContentInSteps" | "processContentAsCode" | "compressSimulationTable" | "collapseConsecutiveConditions" | "collapseOtherSteps" | "autorun", text: string) => {
+    const checkbox = (key: "snap" | "snapResizeToGrid" | "guides" | "showGrid" | "readOnly" | "showSteps" | "showStepNumbers" | "showShapeContentInSteps" | "processContentAsCode" | "setShapeContentBasedOnProgram" | "compressSimulationTable" | "collapseConsecutiveConditions" | "collapseOtherSteps" | "autorun", text: string) => {
         const label = document.createElement("label");
         label.className = "settings-check";
         const input = document.createElement("input");
@@ -54,12 +54,14 @@ export function initSettingsPanel(fileActions: { exportDiagram: () => void; expo
 
     const checks = [
         checkbox("snap", "Snap to grid"),
+        checkbox("snapResizeToGrid", "Snap resized shapes to grid"),
         checkbox("guides", "Snap to other shapes and show alignment guides"),
         checkbox("showGrid", "Show grid"),
         checkbox("showSteps", "Highlight the active flowline during simulation"),
         checkbox("showStepNumbers", "Show step numbers in simulation"),
-        checkbox("showShapeContentInSteps", "Show shape content instead of step numbers"),
-        checkbox("processContentAsCode", "Use Process shape content as code"),
+        checkbox("showShapeContentInSteps", "Show shape content in the simulation table instead of step numbers"),
+        checkbox("processContentAsCode", "Run Process shape text as code"),
+        checkbox("setShapeContentBasedOnProgram", "Automatically generate shape content from program"),
         checkbox("compressSimulationTable", "Compress unchanged simulation steps"),
         checkbox("collapseConsecutiveConditions", "Collapse consecutive conditions into one row"),
         checkbox("collapseOtherSteps", "Collapse consecutive input/output steps into one row"),

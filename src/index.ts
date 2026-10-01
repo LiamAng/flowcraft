@@ -9,6 +9,7 @@ import { initDiagramIO } from "./diagramIO";
 import { initSimulationPanel } from "./simulationPanel";
 import { initViewport } from "./viewport";
 import { applySettings, settings } from "./settings";
+import { updateAllShapeContentFromProgram, updateShapeContentFromProgram } from "./programContent";
 
 export const chart: HTMLElement = document.querySelector('.chart') as HTMLElement;
 const canvas = document.createElement("div");
@@ -36,6 +37,7 @@ const renderHeading = () => {
     document.title = settings.title || "Flowcraft";
 };
 document.addEventListener("flowcraft:settings", renderHeading);
+document.addEventListener("flowcraft:settings", updateAllShapeContentFromProgram);
 renderHeading();
 
 const factoryMap = {
@@ -50,6 +52,7 @@ let selectedTool: keyof typeof factoryMap = 'process';
 
 function addShape<T extends Shape>(shape: T): T {
     canvas.appendChild(shape.element);
+    updateShapeContentFromProgram(shape);
     Shape.notifyDiagramChange();
     return shape;
 }
@@ -203,14 +206,14 @@ initLinkPicker(chart, addShape);
 initSelection(chart);
 initTooltip();
 initFlowValidation();
-const autorun = initSimulationPanel();
+const simulationPanel = initSimulationPanel();
 const loadingScreen = document.querySelector<HTMLElement>(".app-loading");
 const hideLoadingScreen = () => {
     if (!loadingScreen) return;
     loadingScreen.classList.add("is-hidden");
     window.setTimeout(() => loadingScreen.remove(), 250);
 };
-void initDiagramIO(addShape, viewport.fit, autorun).then(() => {
+void initDiagramIO(addShape, viewport.fit, simulationPanel.autorun, simulationPanel.runForExport).then(() => {
     void document.fonts.ready.then(() => {
         window.requestAnimationFrame(hideLoadingScreen);
     });

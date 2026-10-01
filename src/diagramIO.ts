@@ -1,5 +1,5 @@
 import { downloadDiagram, downloadDiagramImage, importDiagramJson, type SimulationExportData } from "./diagramFile";
-import { Shape } from "./shapes";
+import { InputOutput, Shape } from "./shapes";
 import { initSettingsPanel } from "./settingsPanel";
 import { initProjectHistory } from "./projectHistory";
 import { settings } from "./settings";
@@ -7,7 +7,8 @@ import { settings } from "./settings";
 export async function initDiagramIO(
     addShape: (shape: Shape) => Shape,
     fitView: () => void,
-    onImport: () => void
+    onImport: () => void,
+    runSimulationForExport: (onProgress: (message: string) => void) => Promise<boolean>
 ): Promise<boolean> {
     const tools = document.createElement("div");
     tools.className = "diagram-file-tools";
@@ -20,6 +21,20 @@ export async function initDiagramIO(
     const report = (message: string, error = false) => {
         status.textContent = message;
         status.classList.toggle("error", error);
+        status.hidden = false;
+    };
+    const reportProgress = (message: string, percent?: number) => {
+        status.replaceChildren(document.createTextNode(message));
+        const progress = document.createElement("progress");
+        progress.setAttribute("aria-label", "Image export progress");
+        if (percent === undefined) {
+            progress.removeAttribute("value");
+        } else {
+            progress.max = 100;
+            progress.value = percent;
+        }
+        status.appendChild(progress);
+        status.classList.remove("error");
         status.hidden = false;
     };
     const history = initProjectHistory(addShape, fitView, (message) => report(message, true));
@@ -45,7 +60,31 @@ export async function initDiagramIO(
     });
     const settingsButton = initSettingsPanel({
         exportDiagram: downloadDiagram,
-        exportImage: () => {
+        exportImage: async () => {
+            const inputNames = Shape.all
+                .filter((shape): shape is InputOutput => shape instanceof InputOutput && shape.inputOutputType === "input")
+                .flatMap((shape) => shape.variables.length > 0
+                    ? shape.variables.map(({ name }) => name)
+                    : shape.programCode.split(",").map((name) => name.trim()).filter(Boolean));
+            const missingInputs = [...new Set(inputNames.filter((name) => {
+                if (!Object.prototype.hasOwnProperty.call(settings.inputs, name)) return true;
+                const values = settings.inputs[name];
+                return Array.isArray(values) && values.length === 0;
+            }))];
+            if (missingInputs.length > 0 && !window.confirm(
+                `Some simulation inputs are not predefined (${missingInputs.join(", ")}). ` +
+                "Image export will run the flowchart first. Enter the requested values as the simulation reaches each input, and leave the dialogs open until image generation finishes. Continue?"
+            )) {
+                report("Image export cancelled.");
+                return;
+            }
+
+            reportProgress("Running flowchart before image generation…");
+            const finished = await runSimulationForExport((message) => reportProgress(message));
+            if (!finished) {
+                report("Image export cancelled because the simulation did not finish.", true);
+                return;
+            }
             const table = document.querySelector<HTMLTableElement>(".simulation-table");
             const tableRows = table ? [...table.querySelectorAll("tr")] : [];
             const headers = tableRows[0]
@@ -68,9 +107,11 @@ export async function initDiagramIO(
                     ? { stepContentMaxWidth: settings.simulationStepContentMaxWidth }
                     : {}),
             };
-            void downloadDiagramImage(simulation).catch((error: unknown) => {
+            try {
+                await downloadDiagramImage(simulation, (percent, message) => reportProgress(message, percent));
+            } catch (error) {
                 report(error instanceof Error ? error.message : "Could not export the flowchart image.", true);
-            });
+            }
         },
         importDiagram: () => fileInput.click(),
         newProject: history.newProject,

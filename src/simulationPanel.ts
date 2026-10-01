@@ -512,7 +512,7 @@ export function initSimulationPanel() {
         Shape.setSimulationFocus(current);
     };
 
-    const step = async (usePredefinedInputs = true): Promise<boolean> => {
+    const step = async (usePredefinedInputs = true, onProgress?: (message: string) => void): Promise<boolean> => {
         if (!current) await start();
         if (!current) return false;
         const runtime = await getSimulator();
@@ -544,6 +544,7 @@ export function initSimulationPanel() {
             });
             let enteredValues: Record<string, unknown> = {};
             if (missingVariables.length > 0) {
+                onProgress?.(`Waiting for input: ${missingVariables.map(({ name }) => name).join(", ")}`);
                 const entered = await requestInput(missingVariables);
                 if (entered.cancelled) {
                     setStatus("Input cancelled");
@@ -685,16 +686,19 @@ export function initSimulationPanel() {
         collapsePanelForSimulation();
         void guard(async () => { await step(); });
     });
-    const runAll = async (usePredefinedInputs: boolean) => {
-        if (running) return;
+    const runAll = async (usePredefinedInputs: boolean, onProgress?: (message: string) => void): Promise<boolean> => {
+        if (running) return false;
         running = true;
         nextButton.disabled = true;
         runButton.disabled = true;
         runWithoutInputsButton.disabled = true;
+        let finished = false;
         try {
-            while (await step(usePredefinedInputs)) {
+            while (await step(usePredefinedInputs, onProgress)) {
+                onProgress?.(`Running simulation · Step ${executedSteps}`);
                 await new Promise<void>((resolve) => window.setTimeout(resolve, settings.simulationStepDelay));
             }
+            finished = status.textContent === "Finished";
         } catch (error) {
             setError(error);
         } finally {
@@ -703,6 +707,7 @@ export function initSimulationPanel() {
             runButton.disabled = false;
             runWithoutInputsButton.disabled = false;
         }
+        return finished;
     };
     runButton.addEventListener("click", () => {
         collapsePanelForSimulation();
@@ -743,5 +748,14 @@ export function initSimulationPanel() {
         }
     };
 
-    return autorun;
+    const runForExport = async (onProgress: (message: string) => void): Promise<boolean> => {
+        if (running) {
+            onProgress("A simulation is already running.");
+            return false;
+        }
+        collapsePanelForSimulation();
+        reset();
+        return runAll(true, onProgress);
+    };
+    return { autorun, runForExport };
 }

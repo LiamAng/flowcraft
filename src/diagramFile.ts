@@ -275,7 +275,11 @@ function createImageExportSvg(simulation: SimulationExportData): { svg: string; 
     return { svg: `${output.join("")}</svg>`, width, height: y };
 }
 
-export async function downloadDiagramImage(simulation: SimulationExportData): Promise<void> {
+export async function downloadDiagramImage(
+    simulation: SimulationExportData,
+    onProgress: (progress: number, message: string) => void = () => undefined
+): Promise<void> {
+    onProgress(0, "Preparing flowchart image…");
     const { svg, width, height } = createImageExportSvg(simulation);
     const image = new Image();
     const imageSource = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml;charset=utf-8" }));
@@ -285,6 +289,7 @@ export async function downloadDiagramImage(simulation: SimulationExportData): Pr
             image.onerror = () => reject(new Error("Could not render the flowchart image."));
             image.src = imageSource;
         });
+        onProgress(45, "Rendering high-resolution image…");
         const maxPixels = 32_000_000;
         const scale = Math.min(3, 9000 / width, 9000 / height, Math.sqrt(maxPixels / (width * height)));
         const canvas = document.createElement("canvas");
@@ -295,6 +300,7 @@ export async function downloadDiagramImage(simulation: SimulationExportData): Pr
         context.fillStyle = "#ffffff";
         context.fillRect(0, 0, canvas.width, canvas.height);
         context.drawImage(image, 0, 0, canvas.width, canvas.height);
+        onProgress(75, "Encoding PNG…");
         const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
         if (!blob) throw new Error("Could not encode the flowchart image.");
         const downloadUrl = URL.createObjectURL(blob);
@@ -302,6 +308,7 @@ export async function downloadDiagramImage(simulation: SimulationExportData): Pr
         anchor.href = downloadUrl;
         anchor.download = "flowchart.png";
         anchor.click();
+        onProgress(100, "Image export complete.");
         window.setTimeout(() => URL.revokeObjectURL(downloadUrl), 1000);
     } finally {
         URL.revokeObjectURL(imageSource);

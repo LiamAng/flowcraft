@@ -1,5 +1,6 @@
 import { Decision, Initialization, InputOutput, Shape, type VariableDefinition } from "./shapes";
 import { settings } from "./settings";
+import { updateShapeContentFromProgram } from "./programContent";
 
 let dialog: HTMLDialogElement | null = null;
 let editor: HTMLTextAreaElement | null = null;
@@ -139,6 +140,7 @@ function createDialog() {
         } else if (editor) {
             activeShape.programCode = editor.value;
         }
+        updateShapeContentFromProgram(activeShape);
         Shape.notifyDiagramChange();
         element.close();
     });

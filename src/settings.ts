@@ -6,6 +6,7 @@ export type Settings = {
     decisionBranchLabels: "yes-no" | "true-false";
     readOnly: boolean;
     snap: boolean;
+    snapResizeToGrid: boolean;
     gridSize: number;
     guides: boolean;
     showGrid: boolean;
@@ -13,6 +14,7 @@ export type Settings = {
     showStepNumbers: boolean;
     showShapeContentInSteps: boolean;
     processContentAsCode: boolean;
+    setShapeContentBasedOnProgram: boolean;
     compressSimulationTable: boolean;
     collapseConsecutiveConditions: boolean;
     collapseOtherSteps: boolean;
@@ -34,6 +36,7 @@ export const defaultSettings: Settings = {
         window.matchMedia("(max-width: 760px)").matches
         ? false
         : true,
+    snapResizeToGrid: false,
     gridSize: 40,
     guides: true,
     showGrid: true,
@@ -41,6 +44,7 @@ export const defaultSettings: Settings = {
     showStepNumbers: true,
     showShapeContentInSteps: false,
     processContentAsCode: false,
+    setShapeContentBasedOnProgram: true,
     compressSimulationTable: false,
     collapseConsecutiveConditions: false,
     collapseOtherSteps: false,
@@ -63,7 +67,7 @@ export function sanitizeSettings(raw: unknown): Partial<Settings> {
     if (value.decisionBranchLabels === "yes-no" || value.decisionBranchLabels === "true-false") {
         result.decisionBranchLabels = value.decisionBranchLabels;
     }
-    (["readOnly", "snap", "guides", "showGrid", "showSteps", "showStepNumbers", "showShapeContentInSteps", "processContentAsCode", "compressSimulationTable", "collapseConsecutiveConditions", "collapseOtherSteps", "autorun"] as const).forEach((key) => {
+    (["readOnly", "snap", "snapResizeToGrid", "guides", "showGrid", "showSteps", "showStepNumbers", "showShapeContentInSteps", "processContentAsCode", "setShapeContentBasedOnProgram", "compressSimulationTable", "collapseConsecutiveConditions", "collapseOtherSteps", "autorun"] as const).forEach((key) => {
         if (typeof value[key] === "boolean") result[key] = value[key] as boolean;
     });
     if (typeof value.showShapeContentInSteps === "boolean") {
@@ -101,10 +105,12 @@ export function applySettings(patch: Partial<Settings>) {
     Object.assign(settings, sanitizeSettings(patch));
     Shape.readOnly = settings.readOnly;
     Shape.snapEnabled = settings.snap;
+    Shape.snapResizeToGrid = settings.snapResizeToGrid;
     Shape.gridSize = settings.gridSize;
     Shape.guidesEnabled = settings.guides;
     Shape.showSimulationFlowline = settings.showSteps;
     Shape.decisionBranchLabels = settings.decisionBranchLabels;
+    Shape.runProcessContentAsCode = settings.processContentAsCode;
     document.documentElement.classList.toggle("read-only", settings.readOnly);
     if (branchLabelsChanged) Shape.refreshConnections();
     document.dispatchEvent(new CustomEvent("flowcraft:settings"));

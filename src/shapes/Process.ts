@@ -1,6 +1,10 @@
 import { Shape } from "./Shape";
 
 export class Process extends Shape {
+    protected override isProcessShape(): boolean {
+        return true;
+    }
+
     protected override isProgrammable(): boolean {
         return true;
     }
