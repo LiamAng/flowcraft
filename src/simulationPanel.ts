@@ -158,11 +158,13 @@ export function initSimulationPanel() {
     panelToggle.type = "button";
     panelToggle.className = "simulation-panel-toggle";
     panelToggle.setAttribute("aria-controls", panel.id);
-    panelToggle.setAttribute("aria-expanded", "true");
-    panelToggle.setAttribute("aria-label", "Hide simulation panel");
-    panelToggle.title = "Hide simulation panel";
-    panelToggle.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 6 6 6-6 6"/></svg>';
-    let mobilePanelCollapsed = false;
+    let mobilePanelCollapsed = window.matchMedia("(max-width: 760px)").matches;
+    panelToggle.setAttribute("aria-expanded", String(!mobilePanelCollapsed));
+    panelToggle.setAttribute("aria-label", `${mobilePanelCollapsed ? "Show" : "Hide"} simulation panel`);
+    panelToggle.title = `${mobilePanelCollapsed ? "Show" : "Hide"} simulation panel`;
+    panelToggle.innerHTML = mobilePanelCollapsed
+        ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 6-6 6 6 6"/></svg>'
+        : '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 6 6 6-6 6"/></svg>';
     const setMobilePanelCollapsed = (collapsed: boolean) => {
         mobilePanelCollapsed = collapsed;
         document.documentElement.classList.toggle("simulation-panel-collapsed", collapsed);
@@ -184,7 +186,7 @@ export function initSimulationPanel() {
     });
     window.addEventListener("resize", () => {
         if (!window.matchMedia("(max-width: 760px)").matches && mobilePanelCollapsed) {
-            setMobilePanelCollapsed(false);
+            setMobilePanelCollapsed(mobilePanelCollapsed);
         }
     });
     setMobilePanelCollapsed(false);
