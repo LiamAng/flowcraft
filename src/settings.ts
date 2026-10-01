@@ -18,6 +18,7 @@ export type Settings = {
     autorun: boolean;
     inputs: Record<string, unknown>;
     simulationRatio: number;
+    simulationStepContentMaxWidth: number;
     valueAccuracy: number;
     simulationStepDelay: number;
 };
@@ -40,6 +41,7 @@ export const defaultSettings: Settings = {
     autorun: false,
     inputs: {},
     simulationRatio: 0.32,
+    simulationStepContentMaxWidth: 200,
     valueAccuracy: 2,
     simulationStepDelay: 0,
 };
@@ -71,6 +73,9 @@ export function sanitizeSettings(raw: unknown): Partial<Settings> {
     }
     if (typeof value.simulationRatio === "number" && Number.isFinite(value.simulationRatio)) {
         result.simulationRatio = Math.max(0.15, Math.min(0.7, value.simulationRatio));
+    }
+    if (typeof value.simulationStepContentMaxWidth === "number" && Number.isFinite(value.simulationStepContentMaxWidth)) {
+        result.simulationStepContentMaxWidth = Math.max(80, Math.min(600, Math.round(value.simulationStepContentMaxWidth)));
     }
     if (typeof value.valueAccuracy === "number" && Number.isFinite(value.valueAccuracy)) {
         result.valueAccuracy = Math.max(0, Math.min(10, Math.round(value.valueAccuracy)));

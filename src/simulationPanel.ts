@@ -360,8 +360,13 @@ export function initSimulationPanel() {
                     : settings.showShapeContentInSteps
                         ? shapeContent || stepRange
                         : stepRange;
-                if (row.shape instanceof Process && stepLabel.includes("\n")) {
-                    step.classList.add("simulation-step-content-multiline");
+                const showingShapeContent = settings.showShapeContentInSteps &&
+                    !(row.shape instanceof Decision) &&
+                    !(row.shape instanceof Initialization) &&
+                    Boolean(shapeContent);
+                if (showingShapeContent) {
+                    step.classList.add("simulation-step-shape-content");
+                    step.style.maxWidth = `${settings.simulationStepContentMaxWidth}px`;
                 }
                 step.textContent = stepLabel;
                 tr.appendChild(step);

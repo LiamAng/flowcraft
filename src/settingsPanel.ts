@@ -101,6 +101,15 @@ export function initSettingsPanel(fileActions: { exportDiagram: () => void; impo
     });
     accuracyLabel.appendChild(accuracyInput);
 
+    const stepContentWidthLabel = document.createElement("label");
+    stepContentWidthLabel.textContent = "Simulation step content max width (px)";
+    const stepContentWidthInput = document.createElement("input");
+    stepContentWidthInput.type = "number";
+    stepContentWidthInput.min = "80";
+    stepContentWidthInput.max = "600";
+    stepContentWidthInput.step = "10";
+    stepContentWidthLabel.appendChild(stepContentWidthInput);
+
     const speedLabel = document.createElement("label");
     speedLabel.textContent = "Simulation speed";
     const speedInput = document.createElement("select");
@@ -221,7 +230,7 @@ export function initSettingsPanel(fileActions: { exportDiagram: () => void; impo
     save.textContent = "Save";
     actionBar.append(exportButton, importButton, reset, cancel, save);
 
-    form.append(title, chartTitleLabel, descriptionLabel, branchLabelsLabel, ...checks.map((c) => c.label), gridLabel, ratioLabel, accuracyLabel, speedLabel, inputsLabel, error, actionBar);
+    form.append(title, chartTitleLabel, descriptionLabel, branchLabelsLabel, ...checks.map((c) => c.label), gridLabel, ratioLabel, accuracyLabel, stepContentWidthLabel, speedLabel, inputsLabel, error, actionBar);
     dialog.appendChild(form);
     document.body.appendChild(dialog);
 
@@ -235,6 +244,7 @@ export function initSettingsPanel(fileActions: { exportDiagram: () => void; impo
         gridInput.value = String(values.gridSize);
         ratioInput.value = String(Math.round(values.simulationRatio * 100));
         accuracyInput.value = String(values.valueAccuracy);
+        stepContentWidthInput.value = String(values.simulationStepContentMaxWidth);
         speedInput.value = String(values.simulationStepDelay);
         inputsArea.replaceChildren();
         inputRows.length = 0;
@@ -286,6 +296,13 @@ export function initSettingsPanel(fileActions: { exportDiagram: () => void; impo
             error.hidden = false;
             return;
         }
+        const simulationStepContentMaxWidth = Number(stepContentWidthInput.value);
+        if (!Number.isFinite(simulationStepContentMaxWidth) || simulationStepContentMaxWidth < 80 || simulationStepContentMaxWidth > 600) {
+            error.textContent = "Simulation step content max width must be between 80 and 600 pixels.";
+            error.hidden = false;
+            stepContentWidthInput.focus();
+            return;
+        }
         applySettings({
             title: chartTitleInput.value.trim(),
             description: descriptionInput.value.trim(),
@@ -293,6 +310,7 @@ export function initSettingsPanel(fileActions: { exportDiagram: () => void; impo
             ...Object.fromEntries(checks.map(({ input, key }) => [key, input.checked])),
             gridSize,
             simulationRatio,
+            simulationStepContentMaxWidth,
             valueAccuracy: Number(accuracyInput.value),
             simulationStepDelay: Number(speedInput.value),
             inputs,
