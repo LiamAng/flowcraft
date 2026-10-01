@@ -1,7 +1,8 @@
-import { downloadDiagram, importDiagramJson } from "./diagramFile";
+import { downloadDiagram, downloadDiagramImage, importDiagramJson, type SimulationExportData } from "./diagramFile";
 import { Shape } from "./shapes";
 import { initSettingsPanel } from "./settingsPanel";
 import { initProjectHistory } from "./projectHistory";
+import { settings } from "./settings";
 
 export async function initDiagramIO(
     addShape: (shape: Shape) => Shape,
@@ -44,6 +45,33 @@ export async function initDiagramIO(
     });
     const settingsButton = initSettingsPanel({
         exportDiagram: downloadDiagram,
+        exportImage: () => {
+            const table = document.querySelector<HTMLTableElement>(".simulation-table");
+            const tableRows = table ? [...table.querySelectorAll("tr")] : [];
+            const headers = tableRows[0]
+                ? [...tableRows[0].querySelectorAll("th,td")].map((cell) => cell.textContent?.trim() ?? "")
+                : [];
+            const rows = tableRows.slice(1).map((row) => ({
+                cells: [...row.querySelectorAll("th,td")].map((cell) => ({
+                    text: cell.textContent?.trim() ?? "",
+                    ...(cell instanceof HTMLElement && cell.style.backgroundColor
+                        ? { background: cell.style.backgroundColor }
+                        : {}),
+                })),
+            }));
+            const wholeOutput = document.querySelector<HTMLElement>(".simulation-output-content");
+            const simulation: SimulationExportData = {
+                headers,
+                rows,
+                wholeOutput: wholeOutput?.textContent?.trim() || "No output yet.",
+                ...(settings.showShapeContentInSteps
+                    ? { stepContentMaxWidth: settings.simulationStepContentMaxWidth }
+                    : {}),
+            };
+            void downloadDiagramImage(simulation).catch((error: unknown) => {
+                report(error instanceof Error ? error.message : "Could not export the flowchart image.", true);
+            });
+        },
         importDiagram: () => fileInput.click(),
         newProject: history.newProject,
     });

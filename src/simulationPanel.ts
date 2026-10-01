@@ -566,8 +566,9 @@ export function initSimulationPanel() {
             if (!shape.programCode.trim()) throw new Error(`Enter an expression in Output ${shape.id}'s code.`);
             lastOutput = runtime.evaluate(shape.programCode);
             wholeOutput.push(lastOutput);
-        } else if (shape instanceof Process && shape.programCode.trim()) {
-            runtime.exec(shape.programCode);
+        } else if (shape instanceof Process) {
+            const processCode = settings.processContentAsCode ? shape.content.innerText : shape.programCode;
+            if (processCode.trim()) runtime.exec(processCode);
         } else if (shape instanceof Initialization) {
             if (shape.variables.length === 0) throw new Error(`Add at least one variable to Initialization ${shape.id}.`);
             shape.variables.forEach(({ name, type, value }) => {

@@ -1,6 +1,6 @@
 import { applySettings, defaultSettings, settings, type Settings } from "./settings";
 
-export function initSettingsPanel(fileActions: { exportDiagram: () => void; importDiagram: () => void; newProject: () => boolean }): HTMLButtonElement {
+export function initSettingsPanel(fileActions: { exportDiagram: () => void; exportImage: () => void; importDiagram: () => void; newProject: () => boolean }): HTMLButtonElement {
     const button = document.createElement("button");
     button.type = "button";
     button.textContent = "Settings";
@@ -43,7 +43,7 @@ export function initSettingsPanel(fileActions: { exportDiagram: () => void; impo
     error.className = "settings-error";
     error.hidden = true;
 
-    const checkbox = (key: "snap" | "guides" | "showGrid" | "readOnly" | "showSteps" | "showStepNumbers" | "showShapeContentInSteps" | "compressSimulationTable" | "collapseConsecutiveConditions" | "collapseOtherSteps" | "autorun", text: string) => {
+    const checkbox = (key: "snap" | "guides" | "showGrid" | "readOnly" | "showSteps" | "showStepNumbers" | "showShapeContentInSteps" | "processContentAsCode" | "compressSimulationTable" | "collapseConsecutiveConditions" | "collapseOtherSteps" | "autorun", text: string) => {
         const label = document.createElement("label");
         label.className = "settings-check";
         const input = document.createElement("input");
@@ -59,6 +59,7 @@ export function initSettingsPanel(fileActions: { exportDiagram: () => void; impo
         checkbox("showSteps", "Highlight the active flowline during simulation"),
         checkbox("showStepNumbers", "Show step numbers in simulation"),
         checkbox("showShapeContentInSteps", "Show shape content instead of step numbers"),
+        checkbox("processContentAsCode", "Use Process shape content as code"),
         checkbox("compressSimulationTable", "Compress unchanged simulation steps"),
         checkbox("collapseConsecutiveConditions", "Collapse consecutive conditions into one row"),
         checkbox("collapseOtherSteps", "Collapse consecutive input/output steps into one row"),
@@ -218,6 +219,13 @@ export function initSettingsPanel(fileActions: { exportDiagram: () => void; impo
     exportButton.type = "button";
     exportButton.textContent = "Export";
     exportButton.addEventListener("click", fileActions.exportDiagram);
+    const exportImageButton = document.createElement("button");
+    exportImageButton.type = "button";
+    exportImageButton.textContent = "Export as image";
+    exportImageButton.addEventListener("click", () => {
+        dialog.close();
+        fileActions.exportImage();
+    });
     const importButton = document.createElement("button");
     importButton.type = "button";
     importButton.textContent = "Import";
@@ -234,7 +242,7 @@ export function initSettingsPanel(fileActions: { exportDiagram: () => void; impo
     const save = document.createElement("button");
     save.type = "submit";
     save.textContent = "Save";
-    actionBar.append(newProjectButton, exportButton, importButton, reset, cancel, save);
+    actionBar.append(newProjectButton, exportButton, exportImageButton, importButton, reset, cancel, save);
 
     form.append(title, chartTitleLabel, descriptionLabel, branchLabelsLabel, ...checks.map((c) => c.label), gridLabel, ratioLabel, accuracyLabel, stepContentWidthLabel, speedLabel, inputsLabel, error, actionBar);
     dialog.appendChild(form);

@@ -12,6 +12,7 @@ export type Settings = {
     showSteps: boolean;
     showStepNumbers: boolean;
     showShapeContentInSteps: boolean;
+    processContentAsCode: boolean;
     compressSimulationTable: boolean;
     collapseConsecutiveConditions: boolean;
     collapseOtherSteps: boolean;
@@ -39,6 +40,7 @@ export const defaultSettings: Settings = {
     showSteps: false,
     showStepNumbers: true,
     showShapeContentInSteps: false,
+    processContentAsCode: false,
     compressSimulationTable: false,
     collapseConsecutiveConditions: false,
     collapseOtherSteps: false,
@@ -61,7 +63,7 @@ export function sanitizeSettings(raw: unknown): Partial<Settings> {
     if (value.decisionBranchLabels === "yes-no" || value.decisionBranchLabels === "true-false") {
         result.decisionBranchLabels = value.decisionBranchLabels;
     }
-    (["readOnly", "snap", "guides", "showGrid", "showSteps", "showStepNumbers", "showShapeContentInSteps", "compressSimulationTable", "collapseConsecutiveConditions", "collapseOtherSteps", "autorun"] as const).forEach((key) => {
+    (["readOnly", "snap", "guides", "showGrid", "showSteps", "showStepNumbers", "showShapeContentInSteps", "processContentAsCode", "compressSimulationTable", "collapseConsecutiveConditions", "collapseOtherSteps", "autorun"] as const).forEach((key) => {
         if (typeof value[key] === "boolean") result[key] = value[key] as boolean;
     });
     if (typeof value.showShapeContentInSteps === "boolean") {

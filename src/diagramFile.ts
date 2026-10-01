@@ -82,7 +82,7 @@ function wrapPreviewText(value: string, maxCharacters: number): string[] {
     return lines.length ? lines : [""];
 }
 
-function createPreviewImage(): { data: string; width: number; height: number } {
+function createPreviewImage(): { svg: string; data: string; width: number; height: number; viewWidth: number; viewHeight: number } {
     Shape.refreshConnections();
     const bounds = Shape.getDiagramBounds();
     const contentBounds = bounds ?? { x0: 0, y0: 0, x1: 320, y1: 180 };
@@ -164,7 +164,148 @@ function createPreviewImage(): { data: string; width: number; height: number } {
         output.push("</g>");
     });
     output.push("</g></svg>");
-    return { data: `data:image/svg+xml,${encodeURIComponent(output.join(""))}`, width, height };
+    const svg = output.join("");
+    return {
+        svg,
+        data: `data:image/svg+xml,${encodeURIComponent(svg)}`,
+        width,
+        height,
+        viewWidth,
+        viewHeight,
+    };
+}
+
+export type SimulationExportData = {
+    headers: string[];
+    rows: Array<{ cells: Array<{ text: string; background?: string }> }>;
+    wholeOutput: string;
+    stepContentMaxWidth?: number;
+};
+
+function wrapImageText(value: string, maxCharacters: number): string[] {
+    const output: string[] = [];
+    value.split(/\r?\n/).forEach((paragraph) => {
+        const words = paragraph.split(/\s+/).filter(Boolean);
+        let line = "";
+        words.forEach((word) => {
+            if (line && line.length + word.length + 1 > maxCharacters) {
+                output.push(line);
+                line = "";
+            }
+            while (word.length > maxCharacters) {
+                if (line) output.push(line);
+                output.push(Array.from(word).slice(0, maxCharacters).join(""));
+                word = Array.from(word).slice(maxCharacters).join("");
+                line = "";
+            }
+            line = line ? `${line} ${word}` : word;
+        });
+        output.push(line);
+    });
+    return output.length ? output : [""];
+}
+
+function createImageExportSvg(simulation: SimulationExportData): { svg: string; width: number; height: number } {
+    const flowchart = createPreviewImage();
+    const padding = 32;
+    const fontSize = 13;
+    const lineHeight = 18;
+    const rowPadding = 10;
+    const columns = Math.max(simulation.headers.length, ...simulation.rows.map((row) => row.cells.length), 1);
+    const columnWidths = Array.from({ length: columns }, (_, columnIndex) => {
+        if (columnIndex === 0 && simulation.headers[0] === "Step" && simulation.stepContentMaxWidth !== undefined) {
+            return simulation.stepContentMaxWidth;
+        }
+        const values = [
+            simulation.headers[columnIndex] ?? "",
+            ...simulation.rows.map((row) => row.cells[columnIndex]?.text ?? ""),
+        ];
+        const longest = Math.max(0, ...values.map((value) => Math.max(...value.split(/\r?\n/).map((line) => line.length))));
+        return Math.max(88, Math.min(600, longest * 7.2 + rowPadding * 2));
+    });
+    const tableWidth = columnWidths.reduce((total, width) => total + width, 0);
+    const width = Math.max(flowchart.width, tableWidth + padding * 2);
+    const contentX = Math.round((width - tableWidth) / 2);
+    let y = flowchart.height + 44;
+    const output: string[] = [
+        `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="1" viewBox="0 0 ${width} 1">`,
+        `<rect width="${width}" height="100%" fill="#ffffff"/>`,
+        `<svg x="${Math.round((width - flowchart.width) / 2)}" y="0" width="${flowchart.width}" height="${flowchart.height}" viewBox="0 0 ${flowchart.viewWidth} ${flowchart.viewHeight}" preserveAspectRatio="xMidYMid meet">${flowchart.svg.slice(flowchart.svg.indexOf(">") + 1, flowchart.svg.lastIndexOf("</svg>"))}</svg>`,
+        `<text x="${padding}" y="${y}" font-family="system-ui, sans-serif" font-size="20" font-weight="600" fill="#0f172a">Simulation</text>`,
+    ];
+    y += 18;
+
+    const tableRows: Array<{ values: string[]; header: boolean; backgrounds?: Array<string | undefined> }> = [
+        { values: simulation.headers, header: true },
+        ...simulation.rows.map((row) => ({ values: row.cells.map((cell) => cell.text), header: false, backgrounds: row.cells.map((cell) => cell.background) })),
+    ];
+    if (simulation.headers.length === 0 && simulation.rows.length === 0) {
+        tableRows.splice(0, 1, { values: ["No simulation steps yet."], header: false });
+    }
+    tableRows.forEach((row) => {
+        const wrapped = Array.from({ length: columns }, (_, columnIndex) =>
+            wrapImageText(row.values[columnIndex] ?? "", Math.max(1, Math.floor((columnWidths[columnIndex] - rowPadding * 2) / (fontSize * 0.56))))
+        );
+        const height = Math.max(32, Math.max(...wrapped.map((lines) => lines.length)) * lineHeight + 10);
+        let x = contentX;
+        columnWidths.forEach((columnWidth, columnIndex) => {
+            const background = row.header ? "#e2e8f0" : row.backgrounds?.[columnIndex] || "#ffffff";
+            output.push(`<rect x="${x}" y="${y}" width="${columnWidth}" height="${height}" fill="${escapeXml(background)}" stroke="#cbd5e1"/>`);
+            const lines = wrapped[columnIndex];
+            const firstBaseline = y + (height - lines.length * lineHeight) / 2 + lineHeight / 2;
+            lines.forEach((line, lineIndex) => {
+                output.push(`<text x="${x + rowPadding}" y="${firstBaseline + lineIndex * lineHeight}" dominant-baseline="middle" font-family="system-ui, sans-serif" font-size="${fontSize}" font-weight="${row.header ? 600 : 400}" fill="#1e293b">${escapeXml(line)}</text>`);
+            });
+            x += columnWidth;
+        });
+        y += height;
+    });
+
+    y += 28;
+    output.push(`<text x="${padding}" y="${y}" font-family="system-ui, sans-serif" font-size="20" font-weight="600" fill="#0f172a">Whole output</text>`);
+    y += 24;
+    const outputLines = wrapImageText(simulation.wholeOutput || "No output yet.", Math.max(1, Math.floor((width - padding * 2) / 7.5)));
+    const outputHeight = Math.max(42, outputLines.length * lineHeight + 20);
+    output.push(`<rect x="${padding}" y="${y}" width="${width - padding * 2}" height="${outputHeight}" rx="6" fill="#f8fafc" stroke="#cbd5e1"/>`);
+    outputLines.forEach((line, index) => {
+        output.push(`<text x="${padding + 12}" y="${y + 20 + index * lineHeight}" dominant-baseline="middle" font-family="Consolas, monospace" font-size="${fontSize}" fill="#0f172a">${escapeXml(line)}</text>`);
+    });
+    y += outputHeight + padding;
+    output[0] = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${y}" viewBox="0 0 ${width} ${y}">`;
+    return { svg: `${output.join("")}</svg>`, width, height: y };
+}
+
+export async function downloadDiagramImage(simulation: SimulationExportData): Promise<void> {
+    const { svg, width, height } = createImageExportSvg(simulation);
+    const image = new Image();
+    const imageSource = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml;charset=utf-8" }));
+    try {
+        await new Promise<void>((resolve, reject) => {
+            image.onload = () => resolve();
+            image.onerror = () => reject(new Error("Could not render the flowchart image."));
+            image.src = imageSource;
+        });
+        const maxPixels = 32_000_000;
+        const scale = Math.min(3, 9000 / width, 9000 / height, Math.sqrt(maxPixels / (width * height)));
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.max(1, Math.round(width * scale));
+        canvas.height = Math.max(1, Math.round(height * scale));
+        const context = canvas.getContext("2d");
+        if (!context) throw new Error("Could not create an image canvas.");
+        context.fillStyle = "#ffffff";
+        context.fillRect(0, 0, canvas.width, canvas.height);
+        context.drawImage(image, 0, 0, canvas.width, canvas.height);
+        const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
+        if (!blob) throw new Error("Could not encode the flowchart image.");
+        const downloadUrl = URL.createObjectURL(blob);
+        const anchor = document.createElement("a");
+        anchor.href = downloadUrl;
+        anchor.download = "flowchart.png";
+        anchor.click();
+        window.setTimeout(() => URL.revokeObjectURL(downloadUrl), 1000);
+    } finally {
+        URL.revokeObjectURL(imageSource);
+    }
 }
 
 function parseDiagram(json: string): DiagramFile {
@@ -291,7 +432,10 @@ export function exportDiagramJson(includePreview = true): string {
         settings: snapshotSettings(),
         shapes,
         connections,
-        ...(includePreview ? { preview: { mimeType: "image/svg+xml", ...createPreviewImage() } } : {}),
+        ...(includePreview ? (() => {
+            const { data, width, height } = createPreviewImage();
+            return { preview: { mimeType: "image/svg+xml" as const, data, width, height } };
+        })() : {}),
     };
     return JSON.stringify(diagram, null, 2);
 }
