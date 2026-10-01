@@ -1,8 +1,9 @@
 import { Shape } from "./shapes";
 import { settings } from "./settings";
 
-const MIN_ZOOM = 0.01;
+const MIN_ZOOM = 0.25;
 const MAX_ZOOM = 4;
+const WHEEL_ZOOM_SENSITIVITY = 0.0025;
 
 export function initViewport(chart: HTMLElement, canvas: HTMLElement) {
     const controls = document.createElement("div");
@@ -15,7 +16,10 @@ export function initViewport(chart: HTMLElement, canvas: HTMLElement) {
         canvas.style.transform = `translate(${Shape.panX}px, ${Shape.panY}px) scale(${Shape.zoom})`;
         level.textContent = `${Math.round(Shape.zoom * 100)}%`;
         const size = settings.gridSize * Shape.zoom;
-        chart.style.backgroundImage = settings.showGrid ? "radial-gradient(circle, rgba(0,0,0,0.85) 1px, rgba(0,0,0,0) 1px)" : "none";
+        const dotRadius = Math.max(0.35, Shape.zoom);
+        chart.style.backgroundImage = settings.showGrid
+            ? `radial-gradient(circle, rgba(0,0,0,0.85) ${dotRadius}px, rgba(0,0,0,0) ${dotRadius}px)`
+            : "none";
         chart.style.backgroundSize = `${size}px ${size}px`;
         chart.style.backgroundPosition = `${Shape.panX - size / 2}px ${Shape.panY - size / 2}px`;
     };
@@ -33,15 +37,37 @@ export function initViewport(chart: HTMLElement, canvas: HTMLElement) {
         render();
     };
 
+    let targetWheelZoom = Shape.zoom;
+    let wheelZoomCenter = { x: 0, y: 0 };
+    let wheelZoomFrame = 0;
+    const stopWheelZoom = () => {
+        if (wheelZoomFrame) window.cancelAnimationFrame(wheelZoomFrame);
+        wheelZoomFrame = 0;
+        targetWheelZoom = Shape.zoom;
+    };
     const centreZoom = (zoom: number) => {
+        stopWheelZoom();
+        targetWheelZoom = zoom;
         const rect = chart.getBoundingClientRect();
         zoomAt(zoom, rect.left + rect.width / 2, rect.top + rect.height / 2);
     };
+    const animateWheelZoom = () => {
+        const remaining = targetWheelZoom - Shape.zoom;
+        if (Math.abs(remaining) < 0.001) {
+            zoomAt(targetWheelZoom, wheelZoomCenter.x, wheelZoomCenter.y);
+            wheelZoomFrame = 0;
+            return;
+        }
+        zoomAt(Shape.zoom + remaining * 0.2, wheelZoomCenter.x, wheelZoomCenter.y);
+        wheelZoomFrame = window.requestAnimationFrame(animateWheelZoom);
+    };
 
     const fit = () => {
+        stopWheelZoom();
         const rect = chart.getBoundingClientRect();
         if (Shape.all.length === 0) {
             Shape.zoom = 1;
+            targetWheelZoom = Shape.zoom;
             Shape.panX = rect.width / 2;
             Shape.panY = rect.height / 2;
             render();
@@ -53,8 +79,9 @@ export function initViewport(chart: HTMLElement, canvas: HTMLElement) {
         const pad = 60;
         const width = Math.max(1, x1 - x0);
         const height = Math.max(1, y1 - y0);
-        const zoom = Math.max(MIN_ZOOM, Math.min(1, (rect.width - pad * 2) / width, (rect.height - pad * 2) / height));
+        const zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, (rect.width - pad * 2) / width, (rect.height - pad * 2) / height));
         Shape.zoom = zoom;
+        targetWheelZoom = zoom;
         Shape.panX = rect.width / 2 - ((x0 + x1) / 2) * zoom;
         Shape.panY = rect.height / 2 - ((y0 + y1) / 2) * zoom;
         render();
@@ -79,9 +106,21 @@ export function initViewport(chart: HTMLElement, canvas: HTMLElement) {
     chart.addEventListener("wheel", (event: WheelEvent) => {
         event.preventDefault();
         if (event.ctrlKey || event.metaKey) {
-            zoomAt(Shape.zoom * Math.exp(-event.deltaY * 0.01), event.clientX, event.clientY);
+            const deltaScale = event.deltaMode === WheelEvent.DOM_DELTA_LINE ? 16
+                : event.deltaMode === WheelEvent.DOM_DELTA_PAGE ? chart.clientHeight
+                : 1;
+            wheelZoomCenter = { x: event.clientX, y: event.clientY };
+            if (wheelZoomFrame === 0) targetWheelZoom = Shape.zoom;
+            targetWheelZoom = Math.max(
+                MIN_ZOOM,
+                Math.min(targetWheelZoom * Math.exp(-event.deltaY * deltaScale * WHEEL_ZOOM_SENSITIVITY), MAX_ZOOM)
+            );
+            if (wheelZoomFrame === 0) {
+                wheelZoomFrame = window.requestAnimationFrame(animateWheelZoom);
+            }
             return;
         }
+        stopWheelZoom();
         Shape.panX -= event.shiftKey && event.deltaX === 0 ? event.deltaY : event.deltaX;
         Shape.panY -= event.shiftKey && event.deltaX === 0 ? 0 : event.deltaY;
         render();

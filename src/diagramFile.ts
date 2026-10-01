@@ -263,7 +263,7 @@ function parseDiagram(json: string): DiagramFile {
     return { version: 1, settings: sanitizeSettings(candidate.settings), shapes, connections };
 }
 
-export function exportDiagramJson(): string {
+export function exportDiagramJson(includePreview = true): string {
     const shapeIds = new Map(Shape.all.map((shape) => [shape, shape.id]));
     const shapes: SavedShape[] = Shape.all.map((shape) => ({
         id: shape.id,
@@ -286,13 +286,14 @@ export function exportDiagramJson(): string {
         label: link.label,
         ...(link.waypoints ? { waypoints: link.waypoints.map((point) => ({ ...point })) } : {}),
     }));
-    return JSON.stringify({
+    const diagram: DiagramFile = {
         version: 1,
         settings: snapshotSettings(),
         shapes,
         connections,
-        preview: { mimeType: "image/svg+xml", ...createPreviewImage() },
-    }, null, 2);
+        ...(includePreview ? { preview: { mimeType: "image/svg+xml", ...createPreviewImage() } } : {}),
+    };
+    return JSON.stringify(diagram, null, 2);
 }
 
 export function importDiagramJson(json: string, addShape: (shape: Shape) => Shape) {

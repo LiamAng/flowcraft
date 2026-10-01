@@ -1,6 +1,6 @@
 import { applySettings, defaultSettings, settings, type Settings } from "./settings";
 
-export function initSettingsPanel(fileActions: { exportDiagram: () => void; importDiagram: () => void }): HTMLButtonElement {
+export function initSettingsPanel(fileActions: { exportDiagram: () => void; importDiagram: () => void; newProject: () => boolean }): HTMLButtonElement {
     const button = document.createElement("button");
     button.type = "button";
     button.textContent = "Settings";
@@ -115,10 +115,10 @@ export function initSettingsPanel(fileActions: { exportDiagram: () => void; impo
     const speedInput = document.createElement("select");
     [
         { delay: 0, label: "Instant" },
-        { delay: 100, label: "Very fast" },
-        { delay: 250, label: "Fast" },
-        { delay: 500, label: "Normal" },
-        { delay: 1000, label: "Slow" },
+        { delay: 50, label: "Very fast" },
+        { delay: 100, label: "Fast" },
+        { delay: 250, label: "Normal" },
+        { delay: 500, label: "Slow" },
     ].forEach(({ delay, label }) => {
         const option = document.createElement("option");
         option.value = String(delay);
@@ -208,6 +208,12 @@ export function initSettingsPanel(fileActions: { exportDiagram: () => void; impo
 
     const actionBar = document.createElement("div");
     actionBar.className = "program-editor-actions";
+    const newProjectButton = document.createElement("button");
+    newProjectButton.type = "button";
+    newProjectButton.textContent = "New project";
+    newProjectButton.addEventListener("click", () => {
+        if (fileActions.newProject()) dialog.close();
+    });
     const exportButton = document.createElement("button");
     exportButton.type = "button";
     exportButton.textContent = "Export";
@@ -228,7 +234,7 @@ export function initSettingsPanel(fileActions: { exportDiagram: () => void; impo
     const save = document.createElement("button");
     save.type = "submit";
     save.textContent = "Save";
-    actionBar.append(exportButton, importButton, reset, cancel, save);
+    actionBar.append(newProjectButton, exportButton, importButton, reset, cancel, save);
 
     form.append(title, chartTitleLabel, descriptionLabel, branchLabelsLabel, ...checks.map((c) => c.label), gridLabel, ratioLabel, accuracyLabel, stepContentWidthLabel, speedLabel, inputsLabel, error, actionBar);
     dialog.appendChild(form);

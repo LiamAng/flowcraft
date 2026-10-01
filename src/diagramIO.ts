@@ -1,6 +1,7 @@
 import { downloadDiagram, importDiagramJson } from "./diagramFile";
 import { Shape } from "./shapes";
 import { initSettingsPanel } from "./settingsPanel";
+import { initProjectHistory } from "./projectHistory";
 
 export async function initDiagramIO(
     addShape: (shape: Shape) => Shape,
@@ -20,6 +21,7 @@ export async function initDiagramIO(
         status.classList.toggle("error", error);
         status.hidden = false;
     };
+    const history = initProjectHistory(addShape, fitView, (message) => report(message, true));
 
     const fileInput = document.createElement("input");
     fileInput.type = "file";
@@ -43,15 +45,17 @@ export async function initDiagramIO(
     const settingsButton = initSettingsPanel({
         exportDiagram: downloadDiagram,
         importDiagram: () => fileInput.click(),
+        newProject: history.newProject,
     });
     settingsButton.hidden = new URLSearchParams(window.location.search).has("hideSettings");
-    tools.append(settingsButton, fileInput);
+    tools.append(history.undoButton, history.redoButton, settingsButton, fileInput);
 
     tools.appendChild(status);
     document.body.appendChild(tools);
 
     const url = new URLSearchParams(window.location.search).get("url");
     if (!url) {
+        history.loadLocalProject();
         fitView();
         onImport();
         return true;

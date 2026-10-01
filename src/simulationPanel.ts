@@ -177,6 +177,11 @@ export function initSimulationPanel() {
         panel.inert = collapsed;
         panel.setAttribute("aria-hidden", String(collapsed));
     };
+    const collapsePanelForSimulation = () => {
+        if (window.matchMedia("(max-width: 760px)").matches) {
+            setMobilePanelCollapsed(true);
+        }
+    };
     panelToggle.addEventListener("click", () => setMobilePanelCollapsed(!mobilePanelCollapsed));
     document.addEventListener("keydown", (event) => {
         if (event.key === "Escape" && window.matchMedia("(max-width: 760px)").matches && !mobilePanelCollapsed) {
@@ -203,12 +208,13 @@ export function initSimulationPanel() {
     collapseButton.className = "simulation-collapse";
     collapseButton.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 10 5 5 5-5"/></svg>';
     collapseButton.setAttribute("aria-expanded", "false");
-    collapseButton.setAttribute("aria-label", "Hide simulation buttons");
+    collapseButton.setAttribute("aria-label", "Hide controls");
+    collapseButton.title = "Hide controls";
     collapseButton.addEventListener("click", () => {
         const collapsed = document.documentElement.classList.toggle("simulation-controls-collapsed");
         collapseButton.setAttribute("aria-expanded", String(!collapsed));
-        collapseButton.setAttribute("aria-label", `${collapsed ? "Show" : "Hide"} simulation buttons`);
-        collapseButton.title = `${collapsed ? "Show" : "Hide"} simulation buttons`;
+        collapseButton.setAttribute("aria-label", `${collapsed ? "Show" : "Hide"} controls`);
+        collapseButton.title = `${collapsed ? "Show" : "Hide"} controls`;
         collapseButton.innerHTML = collapsed
             ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 14 5-5 5 5"/></svg>'
             : '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 10 5 5 5-5"/></svg>';
@@ -216,8 +222,8 @@ export function initSimulationPanel() {
     const setControlsCollapsed = (collapsed: boolean) => {
         document.documentElement.classList.toggle("simulation-controls-collapsed", collapsed);
         collapseButton.setAttribute("aria-expanded", String(!collapsed));
-        collapseButton.setAttribute("aria-label", `${collapsed ? "Show" : "Hide"} simulation buttons`);
-        collapseButton.title = `${collapsed ? "Show" : "Hide"} simulation buttons`;
+        collapseButton.setAttribute("aria-label", `${collapsed ? "Show" : "Hide"} controls`);
+        collapseButton.title = `${collapsed ? "Show" : "Hide"} controls`;
         collapseButton.innerHTML = collapsed
             ? '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 14 5-5 5 5"/></svg>'
             : '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 10 5 5 5-5"/></svg>';
@@ -230,21 +236,31 @@ export function initSimulationPanel() {
 
     const nextButton = document.createElement("button");
     nextButton.type = "button";
-    nextButton.textContent = "Next step";
+    nextButton.textContent = "Step";
+    nextButton.title = "Run next step";
+    nextButton.setAttribute("aria-label", "Run next step");
 
     const runButton = document.createElement("button");
     runButton.type = "button";
-    runButton.textContent = "Run all";
+    runButton.textContent = "Run";
+    runButton.title = "Run simulation";
+    runButton.setAttribute("aria-label", "Run simulation");
 
     const resetButton = document.createElement("button");
     resetButton.type = "button";
     resetButton.textContent = "Reset";
+    resetButton.title = "Reset simulation";
+    resetButton.setAttribute("aria-label", "Reset simulation");
     const runWithoutInputsButton = document.createElement("button");
     runWithoutInputsButton.type = "button";
-    runWithoutInputsButton.textContent = "Run without predefined inputs";
+    runWithoutInputsButton.textContent = "Run (no inputs)";
+    runWithoutInputsButton.title = "Run without predefined inputs";
+    runWithoutInputsButton.setAttribute("aria-label", "Run without predefined inputs");
     const showInputsButton = document.createElement("button");
     showInputsButton.type = "button";
-    showInputsButton.textContent = "Hide predefined inputs";
+    showInputsButton.textContent = "Hide inputs";
+    showInputsButton.title = "Hide predefined inputs";
+    showInputsButton.setAttribute("aria-label", "Hide predefined inputs");
     showInputsButton.setAttribute("aria-expanded", "true");
     const status = document.createElement("span");
     status.className = "simulation-status";
@@ -277,7 +293,9 @@ export function initSimulationPanel() {
         const visible = inputsPreview.hidden;
         inputsPreview.hidden = !visible;
         showInputsButton.setAttribute("aria-expanded", String(visible));
-        showInputsButton.textContent = `${visible ? "Hide" : "Show"} predefined inputs`;
+        showInputsButton.textContent = `${visible ? "Hide" : "Show"} inputs`;
+        showInputsButton.title = `${visible ? "Hide" : "Show"} predefined inputs`;
+        showInputsButton.setAttribute("aria-label", `${visible ? "Hide" : "Show"} predefined inputs`);
         if (visible) renderInputsPreview();
     });
 
@@ -504,6 +522,9 @@ export function initSimulationPanel() {
 
         const shape = current;
         const stepNumber = executedSteps + 1;
+        if (shape instanceof InputOutput && shape.inputOutputType === "input") {
+            Shape.setSimulationFocus(shape, previousConnection);
+        }
         let condition: boolean | undefined;
         if (shape instanceof InputOutput && shape.inputOutputType === "input") {
             const variables = inputVariables(shape);
@@ -607,6 +628,7 @@ export function initSimulationPanel() {
         lastStepWasDecision = shape instanceof Decision;
         lastStepWasOther = !(shape instanceof Process || shape instanceof Decision || shape instanceof Initialization);
 
+        const incomingConnection = previousConnection;
         let connection: LinkRecord | undefined;
         if (shape instanceof Decision) {
             const role = condition ? "next" : "altNext";
@@ -618,12 +640,14 @@ export function initSimulationPanel() {
         current = connection?.to ?? null;
         previousConnection = connection ?? null;
         renderTable();
-        Shape.setSimulationFocus(shape, previousConnection);
+        Shape.setSimulationFocus(
+            shape,
+            connection ?? (shape instanceof Terminator && shape.terminatorType === "end" ? incomingConnection : null)
+        );
 
         if (!current) {
             setStatus("Finished");
             renderWholeOutput();
-            Shape.setSimulationFocus(null);
             return false;
         }
         setStatus(`Step ${executedSteps}`);
@@ -656,7 +680,10 @@ export function initSimulationPanel() {
         Shape.setSimulationFocus(null);
     };
 
-    nextButton.addEventListener("click", () => guard(async () => { await step(); }));
+    nextButton.addEventListener("click", () => {
+        collapsePanelForSimulation();
+        void guard(async () => { await step(); });
+    });
     const runAll = async (usePredefinedInputs: boolean) => {
         if (running) return;
         running = true;
@@ -676,9 +703,18 @@ export function initSimulationPanel() {
             runWithoutInputsButton.disabled = false;
         }
     };
-    runButton.addEventListener("click", () => runAll(true));
-    runWithoutInputsButton.addEventListener("click", () => runAll(false));
-    resetButton.addEventListener("click", reset);
+    runButton.addEventListener("click", () => {
+        collapsePanelForSimulation();
+        void runAll(true);
+    });
+    runWithoutInputsButton.addEventListener("click", () => {
+        collapsePanelForSimulation();
+        void runAll(false);
+    });
+    resetButton.addEventListener("click", () => {
+        collapsePanelForSimulation();
+        reset();
+    });
     document.addEventListener("flowcraft:diagramchange", reset);
     document.addEventListener("flowcraft:settings", () => {
         renderTable();

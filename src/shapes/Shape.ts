@@ -1005,6 +1005,7 @@ export class Shape {
                         waypoints.splice(waypointIndex, 1);
                         link.waypoints = waypoints.length > 0 ? waypoints : undefined;
                         Shape.renderConnections();
+                        Shape.notifyDiagramChange();
                     };
                     corner.addEventListener("pointerdown", (event: PointerEvent) => {
                         event.preventDefault();
@@ -1049,6 +1050,7 @@ export class Shape {
             if (!branchLabel) {
                 label.addEventListener("input", () => {
                     link.label = label.textContent ?? "";
+                    Shape.notifyDiagramChange();
                 });
             }
             label.addEventListener("keydown", (event) => {
@@ -1167,6 +1169,7 @@ export class Shape {
                 Shape.lastLineClick = null;
                 Shape.selectedLink = link;
                 Shape.renderConnections();
+                Shape.notifyDiagramChange();
                 return;
             }
 
@@ -1179,6 +1182,7 @@ export class Shape {
                 if (link.waypoints && link.waypoints.length > 0) {
                     link.waypoints = undefined;
                     Shape.renderConnections();
+                    Shape.notifyDiagramChange();
                 }
             } else {
                 Shape.lastLineClick = { link, time: now };
@@ -1326,6 +1330,7 @@ export class Shape {
                 this.fit();
             }
             Shape.renderConnections();
+            Shape.notifyDiagramChange();
         };
 
         handle.addEventListener("pointermove", onMove);
@@ -1430,6 +1435,7 @@ export class Shape {
     }
 
     onMouseUp() {
+        const wasDragging = this.isDragging;
         if (this.isDragging) {
             Shape.clearGuides();
         }
@@ -1440,6 +1446,7 @@ export class Shape {
         this.dragOffsetX = 0;
         this.dragOffsetY = 0;
         this.element.style.cursor = "default";
+        if (wasDragging) Shape.notifyDiagramChange();
     }
 
     constructor() {
