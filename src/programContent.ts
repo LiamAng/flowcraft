@@ -18,7 +18,7 @@ export function getShapeContentPrefix(shape: Shape): string {
                 ? (shape.variables.length > 0
                 ? shape.variables.map(({ name }) => name)
                 : shape.programCode.split(",").map((name) => name.trim()).filter(Boolean)
-                ).join(", ")
+                ).join("\n")
                 : shape.programCode.trim();
         if (details && !content.includes("\n") && content.endsWith(details)) {
             const prefix = content.slice(0, -details.length).replace(/[\s,:;|/-]+$/, "").trim();
@@ -68,7 +68,7 @@ export function updateShapeContentFromProgram(shape: Shape): void {
             ? (shape.variables.length > 0
                 ? shape.variables.map(({ name }) => name)
                 : shape.programCode.split(",").map((name) => name.trim()).filter(Boolean)
-            ).join(", ")
+            ).join("\n")
             : shape.programCode.trim();
         shape.content.textContent = details ? `${prefix}\n${details}` : prefix;
         return;
