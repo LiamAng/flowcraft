@@ -10,9 +10,20 @@ type SimulationRow = {
     stepEnd: number;
     shape: Shape;
     variables: Record<string, unknown>;
+    variableReasons: Record<string, string>;
     conditions: Record<string, boolean[]>;
+    conditionReasons: Record<string, string[]>;
     output: unknown;
     outputs: unknown[];
+    outputReasons: string[];
+};
+
+type SimulationColumn = {
+    id: string;
+    title: string;
+    kind: "step" | "variable" | "condition" | "output";
+    name?: string;
+    shape?: Decision;
 };
 
 const MAX_STEPS = 10000;
@@ -46,6 +57,16 @@ function display(value: unknown, accuracy: number): string {
     return String(value);
 }
 
+function supportsReasonValue(value: unknown): boolean {
+    return typeof value === "number" || typeof value === "boolean" ||
+        (typeof value === "string" && value.trim() !== "" && Number.isFinite(Number(value)));
+}
+
+function displayReasonValue(value: unknown, reason: string | undefined, accuracy: number): string {
+    const text = display(value, accuracy);
+    return settings.showReasonForValue && supportsReasonValue(value) && reason ? `${text} (${reason})` : text;
+}
+
 function inputSequence(value: unknown): unknown[] {
     if (Array.isArray(value)) return value;
     return value === undefined ? [] : [value];
@@ -74,6 +95,171 @@ function columnColor(name: string): string {
         hash = (hash * 31 + character.charCodeAt(0)) | 0;
     }
     return `hsl(${Math.abs(hash) % 360} 75% 92%)`;
+}
+
+function formatExpressionValue(value: unknown): string {
+    if (typeof value === "string") return JSON.stringify(value);
+    if (typeof value === "number" || typeof value === "boolean" || value === null) return String(value);
+    if (value === undefined) return "undefined";
+    try {
+        return JSON.stringify(value);
+    } catch {
+        return String(value);
+    }
+}
+
+function substituteExpressionValues(expression: string, scope: Record<string, unknown>): string {
+    const keywords = new Set(["true", "false", "null", "undefined", "NaN", "Infinity"]);
+    return expression.replace(/\b[A-Za-z_$][\w$]*\b/g, (name, offset, source) => {
+        const previous = source[offset - 1];
+        if (previous === "." || keywords.has(name) || !Object.prototype.hasOwnProperty.call(scope, name)) {
+            return name;
+        }
+        return formatExpressionValue(scope[name]);
+    }).replace(/\s+/g, " ").trim();
+}
+
+function assignmentReasons(code: string, before: Record<string, unknown>, after: Record<string, unknown>): Record<string, string> {
+    const reasons: Record<string, string> = {};
+    const statements = code.split(/[;\r\n]+/).map((statement) => statement.trim()).filter(Boolean);
+    statements.forEach((statement) => {
+        const increment = statement.match(/^([A-Za-z_$][\w$]*)\s*(\+\+|--)$/);
+        if (increment) {
+            const [, name, operator] = increment;
+            reasons[name] = `${name} = ${formatExpressionValue(before[name])} ${operator === "++" ? "+" : "-"} 1`;
+            return;
+        }
+        const compound = statement.match(/^([A-Za-z_$][\w$]*)\s*([+\-*/%])=\s*(.+)$/);
+        if (compound) {
+            const [, name, operator, expression] = compound;
+            reasons[name] = `${name} = ${formatExpressionValue(before[name])} ${operator} ${substituteExpressionValues(expression, before)}`;
+            return;
+        }
+        const assignment = statement.match(/^(?:(?:let|var|const)\s+)?([A-Za-z_$][\w$]*)\s*=\s*(?!=)(.+)$/);
+        if (assignment) {
+            const [, name, expression] = assignment;
+            reasons[name] = `${name} = ${substituteExpressionValues(expression, before)}`;
+        }
+    });
+    Object.keys(after).forEach((name) => {
+        if (!valuesEqual(before[name], after[name]) && !reasons[name]) {
+            reasons[name] = `${name} = ${formatExpressionValue(after[name])}`;
+        }
+    });
+    return reasons;
+}
+
+function inferredVariableReason(name: string, previous: unknown, value: unknown): string {
+    const previousNumber = typeof previous === "number" || (typeof previous === "string" && previous.trim() !== "")
+        ? Number(previous)
+        : NaN;
+    const valueNumber = typeof value === "number" || (typeof value === "string" && value.trim() !== "")
+        ? Number(value)
+        : NaN;
+    if (Number.isFinite(previousNumber) && Number.isFinite(valueNumber)) {
+        if (valueNumber === previousNumber + 1) return `${name} = ${previous} + 1`;
+        if (valueNumber === previousNumber - 1) return `${name} = ${previous} - 1`;
+    }
+    return `${name} = ${formatExpressionValue(value)}`;
+}
+
+function cloneSimulationRow(row: SimulationRow): SimulationRow {
+    return {
+        ...row,
+        variables: { ...row.variables },
+        variableReasons: { ...row.variableReasons },
+        conditions: Object.fromEntries(Object.entries(row.conditions).map(([id, conditions]) => [id, [...conditions]])),
+        conditionReasons: Object.fromEntries(Object.entries(row.conditionReasons).map(([id, reasons]) => [id, [...reasons]])),
+        outputs: [...row.outputs],
+        outputReasons: [...row.outputReasons],
+    };
+}
+
+function mergeSimulationRows(base: SimulationRow, next: SimulationRow): SimulationRow {
+    const conditions = { ...base.conditions };
+    Object.entries(next.conditions).forEach(([id, values]) => {
+        conditions[id] = [...(conditions[id] ?? []), ...values];
+    });
+    const conditionReasons = { ...base.conditionReasons };
+    Object.entries(next.conditionReasons).forEach(([id, reasons]) => {
+        conditionReasons[id] = [...(conditionReasons[id] ?? []), ...reasons];
+    });
+    return {
+        ...base,
+        stepEnd: next.stepEnd,
+        variables: { ...next.variables },
+        variableReasons: { ...base.variableReasons, ...next.variableReasons },
+        conditions,
+        conditionReasons,
+        output: next.output !== "" ? next.output : base.output,
+        outputs: [...base.outputs, ...next.outputs],
+        outputReasons: [...base.outputReasons, ...next.outputReasons],
+    };
+}
+
+function changedVisibleColumns(
+    previous: SimulationRow | null,
+    row: SimulationRow,
+    variableNames: string[],
+    decisionShapes: Decision[],
+    showOutputColumn: boolean
+): Set<string> {
+    const changes = new Set<string>();
+    variableNames.forEach((name) => {
+        const hasValue = Object.prototype.hasOwnProperty.call(row.variables, name);
+        const previousValue = previous?.variables[name];
+        if (hasValue && (!previous || !valuesEqual(previousValue, row.variables[name]))) {
+            changes.add(`variable:${name}`);
+        }
+    });
+    decisionShapes.forEach((shape) => {
+        if ((row.conditions[shape.id] ?? []).length > 0) {
+            changes.add(`condition:${shape.id}`);
+        }
+    });
+    if (showOutputColumn && row.outputs.length > 0) {
+        changes.add("output");
+    }
+    return changes;
+}
+
+function collapseNonConflictingRows(
+    sourceRows: SimulationRow[],
+    variableNames: string[],
+    decisionShapes: Decision[],
+    showOutputColumn: boolean
+): SimulationRow[] {
+    const collapsed: SimulationRow[] = [];
+    let group: SimulationRow | null = null;
+    let groupChanges = new Set<string>();
+    let previousRaw: SimulationRow | null = null;
+
+    sourceRows.forEach((row) => {
+        const displayRow = cloneSimulationRow(row);
+        const isInput = row.shape instanceof InputOutput && row.shape.inputOutputType === "input";
+        if (!isInput && previousRaw) {
+            Object.entries(displayRow.variables).forEach(([name, value]) => {
+                if (!supportsReasonValue(value) ||
+                    valuesEqual(previousRaw?.variables[name], value) || displayRow.variableReasons[name]) return;
+                displayRow.variableReasons[name] = inferredVariableReason(name, previousRaw?.variables[name], value);
+            });
+        }
+        const rowChanges = changedVisibleColumns(previousRaw, displayRow, variableNames, decisionShapes, showOutputColumn);
+        const isInitialization = displayRow.shape instanceof Initialization;
+        const groupIsInitialization = group?.shape instanceof Initialization;
+        const conflicts = [...rowChanges].some((change) => groupChanges.has(change));
+        if (!group || isInitialization || groupIsInitialization || conflicts) {
+            if (group) collapsed.push(group);
+            group = displayRow;
+            groupChanges = rowChanges;
+        } else {
+            group = mergeSimulationRows(group, displayRow);
+            rowChanges.forEach((change) => groupChanges.add(change));
+        }
+        previousRaw = displayRow;
+    });
+    if (group) collapsed.push(group);
+    return collapsed;
 }
 
 function createInputDialog() {
@@ -264,6 +450,10 @@ export function initSimulationPanel() {
     showInputsButton.setAttribute("aria-label", "Hide predefined inputs");
     showInputsButton.setAttribute("aria-expanded", "true");
     const configureInputsButton = createSimulationInputsControl();
+    const updateConfigureInputsVisibility = () => {
+        configureInputsButton.hidden = settings.readOnly;
+    };
+    updateConfigureInputsVisibility();
     const status = document.createElement("span");
     status.className = "simulation-status";
     status.setAttribute("role", "status");
@@ -381,6 +571,7 @@ export function initSimulationPanel() {
     let lastStepWasDecision = false;
     let lastStepWasOther = false;
     let lastOtherRowIndex: number | null = null;
+    let columnOrder: string[] = [...settings.simulationColumnOrder];
 
     const renderTable = () => {
         table.replaceChildren();
@@ -392,28 +583,65 @@ export function initSimulationPanel() {
         });
         const decisionShapes = Shape.all.filter((shape) => shape instanceof Decision);
         const showOutputColumn = !(current === null && wholeOutput.length === 1);
+        const availableColumns: SimulationColumn[] = [
+            ...(settings.showStepNumbers ? [{ id: "step", title: "Step", kind: "step" as const }] : []),
+            ...variableNames.map((name) => ({ id: `variable:${name}`, title: name, kind: "variable" as const, name })),
+            ...decisionShapes.map((shape) => ({
+                id: `condition:${shape.id}`,
+                title: shape.content.textContent?.trim() || shape.id,
+                kind: "condition" as const,
+                shape,
+            })),
+            ...(showOutputColumn ? [{ id: "output", title: "Output", kind: "output" as const }] : []),
+        ];
+        const availableIds = new Set(availableColumns.map(({ id }) => id));
+        columnOrder = [
+            ...columnOrder.filter((id) => availableIds.has(id)),
+            ...availableColumns.map(({ id }) => id).filter((id) => !columnOrder.includes(id)),
+        ];
+        const columns = columnOrder.map((id) => availableColumns.find((column) => column.id === id)).filter((column): column is SimulationColumn => Boolean(column));
         const head = document.createElement("thead");
         const headerRow = document.createElement("tr");
-        const columnTitles = [ ...(settings.showStepNumbers ? ["Step"] : []), ...variableNames, ...decisionShapes.map((shape) => shape.content.textContent?.trim() || shape.id), ...(showOutputColumn ? ["Output"] : [])];
-        columnTitles.forEach((title, index, all) => {
+        columns.forEach((column, index, all) => {
             const cell = document.createElement("th");
-            cell.textContent = title;
-            if (title === "Step" && settings.showShapeContentInSteps) {
+            cell.textContent = column.title;
+            cell.draggable = true;
+            cell.addEventListener("dragstart", (event) => {
+                event.dataTransfer?.setData("text/plain", column.id);
+            });
+            cell.addEventListener("dragover", (event) => event.preventDefault());
+            cell.addEventListener("drop", (event) => {
+                event.preventDefault();
+                const draggedId = event.dataTransfer?.getData("text/plain");
+                if (!draggedId || draggedId === column.id) return;
+                const from = columnOrder.indexOf(draggedId);
+                const to = columnOrder.indexOf(column.id);
+                if (from < 0 || to < 0) return;
+                columnOrder.splice(from, 1);
+                columnOrder.splice(to, 0, draggedId);
+                applySettings({ simulationColumnOrder: [...columnOrder] });
+                renderTable();
+            });
+            if (column.kind === "step" && settings.showShapeContentInSteps) {
                 cell.classList.add("simulation-step-content-column");
                 cell.style.width = `${settings.simulationStepContentMaxWidth}px`;
                 cell.style.minWidth = `${settings.simulationStepContentMaxWidth}px`;
                 cell.style.maxWidth = `${settings.simulationStepContentMaxWidth}px`;
             }
-            if (index > 0 && index < all.length - 1) cell.style.backgroundColor = columnColor(title);
+            if (column.kind !== "step" && index > 0 && index < all.length - 1) cell.style.backgroundColor = columnColor(column.title);
             headerRow.appendChild(cell);
         });
         head.appendChild(headerRow);
         table.appendChild(head);
 
         const body = document.createElement("tbody");
-        rows.forEach((row) => {
+        const visibleRows = settings.collapseNonConflictingChanges
+            ? collapseNonConflictingRows(rows, variableNames, decisionShapes, showOutputColumn)
+            : rows;
+        visibleRows.forEach((row, rowIndex) => {
             const tr = document.createElement("tr");
-            if (settings.showStepNumbers) {
+            columns.forEach((column) => {
+            if (column.kind === "step") {
                 const step = document.createElement("th");
                 step.scope = "row";
                 const stepRange = row.step === row.stepEnd ? String(row.step) : `${row.step}-${row.stepEnd}`;
@@ -445,25 +673,42 @@ export function initSimulationPanel() {
                 step.textContent = stepLabel;
                 tr.appendChild(step);
             }
-            variableNames.forEach((name) => {
+            if (column.kind === "variable" && column.name) {
+                const name = column.name;
                 const cell = document.createElement("td");
-                cell.textContent = display(row.variables[name], settings.valueAccuracy);
+                const isInputRow = row.shape instanceof InputOutput && row.shape.inputOutputType === "input";
+                const previousRow = visibleRows[rowIndex - 1];
+                const hasChanged = previousRow && !valuesEqual(previousRow.variables[name], row.variables[name]);
+                const fallbackReason = !isInputRow && hasChanged &&
+                    supportsReasonValue(row.variables[name])
+                    ? inferredVariableReason(name, previousRow.variables[name], row.variables[name])
+                    : undefined;
+                cell.textContent = displayReasonValue(
+                    row.variables[name],
+                    row.variableReasons[name] ?? fallbackReason,
+                    settings.valueAccuracy
+                );
                 cell.style.backgroundColor = columnColor(name);
-                tr.appendChild(cell);
-            });
-            decisionShapes.forEach((shape) => {
+                 tr.appendChild(cell);
+                }
+             if (column.kind === "condition" && column.shape) {
+                const shape = column.shape;
                 const cell = document.createElement("td");
                 const conditions = row.conditions[shape.id];
-                cell.textContent = conditions?.map((condition) => condition ? "true" : "false").join(" → ") ?? "";
+                const reasons = row.conditionReasons[shape.id] ?? [];
+                cell.textContent = conditions?.map((condition, index) =>
+                    displayReasonValue(condition, reasons[index], settings.valueAccuracy)
+                ).join(" → ") ?? "";
                 cell.style.backgroundColor = columnColor(`condition:${shape.id}`);
-                tr.appendChild(cell);
-            });
-            if (showOutputColumn) {
+                 tr.appendChild(cell);
+                }
+             if (column.kind === "output") {
                 const output = document.createElement("td");
                 output.textContent = row.outputs.map((value) => display(value, settings.valueAccuracy)).join(" → ") ||
                     display(row.output, settings.valueAccuracy);
                 tr.appendChild(output);
             }
+            });
             body.appendChild(tr);
         });
         table.appendChild(body);
@@ -524,6 +769,10 @@ export function initSimulationPanel() {
 
         const shape = current;
         const stepNumber = executedSteps + 1;
+        const scopeBeforeStep = { ...runtime.getScope() };
+        let variableReasons: Record<string, string> = {};
+        let conditionReason = "";
+        let outputReason = "";
         if (shape instanceof InputOutput && shape.inputOutputType === "input") {
             Shape.setSimulationFocus(shape, previousConnection);
         }
@@ -565,13 +814,18 @@ export function initSimulationPanel() {
         } else if (shape instanceof Decision) {
             if (!shape.programCode.trim()) throw new Error(`Enter a true/false expression in Decision ${shape.id}'s code.`);
             condition = Boolean(runtime.evaluate(shape.programCode));
+            conditionReason = substituteExpressionValues(shape.programCode, scopeBeforeStep);
         } else if (shape instanceof InputOutput && shape.inputOutputType === "output") {
             if (!shape.programCode.trim()) throw new Error(`Enter an expression in Output ${shape.id}'s code.`);
             lastOutput = runtime.evaluate(shape.programCode);
+            outputReason = substituteExpressionValues(shape.programCode, scopeBeforeStep);
             wholeOutput.push(lastOutput);
         } else if (shape instanceof Process) {
             const processCode = settings.processContentAsCode ? shape.content.innerText : shape.programCode;
-            if (processCode.trim()) runtime.exec(processCode);
+            if (processCode.trim()) {
+                runtime.exec(processCode);
+                variableReasons = assignmentReasons(processCode, scopeBeforeStep, runtime.getScope());
+            }
         } else if (shape instanceof Initialization) {
             if (shape.variables.length === 0) throw new Error(`Add at least one variable to Initialization ${shape.id}.`);
             shape.variables.forEach(({ name, type, value }) => {
@@ -581,9 +835,19 @@ export function initSimulationPanel() {
                         throw new Error(`Source variable ${String(value)} for ${name} is not initialized.`);
                     }
                     runtime.getScope()[name] = runtime.getScope()[value];
+                    variableReasons[name] = `${name} = ${value}`;
                     return;
                 }
                 runtime.getScope()[name] = type === "number" ? Number(value) : String(value);
+                variableReasons[name] = `${name} = ${formatExpressionValue(runtime.getScope()[name])}`;
+            });
+        }
+        if (!(shape instanceof InputOutput && shape.inputOutputType === "input")) {
+            Object.entries(runtime.getScope()).forEach(([name, value]) => {
+                if ((typeof value === "number" || typeof value === "boolean") &&
+                    !valuesEqual(scopeBeforeStep[name], value) && !variableReasons[name]) {
+                    variableReasons[name] = `${name} = ${formatExpressionValue(value)}`;
+                }
             });
         }
 
@@ -594,9 +858,12 @@ export function initSimulationPanel() {
                 stepEnd: stepNumber,
                 shape,
                 variables: { ...runtime.getScope() },
+                variableReasons,
                 conditions: shape instanceof Decision && condition !== undefined ? { [shape.id]: [condition] } : {},
+                conditionReasons: shape instanceof Decision && condition !== undefined ? { [shape.id]: [conditionReason] } : {},
                 output: shape instanceof InputOutput && shape.inputOutputType === "output" ? lastOutput : "",
                 outputs: shape instanceof InputOutput && shape.inputOutputType === "output" ? [lastOutput] : [],
+                outputReasons: shape instanceof InputOutput && shape.inputOutputType === "output" ? [outputReason] : [],
             };
             const previousRow = rows[rows.length - 1];
             const isOtherShape = !(shape instanceof Process || shape instanceof Decision || shape instanceof Initialization);
@@ -604,16 +871,24 @@ export function initSimulationPanel() {
                 lastOtherRowIndex !== null && rows[lastOtherRowIndex]) {
                 const group = rows[lastOtherRowIndex];
                 group.variables = nextRow.variables;
+                group.variableReasons = { ...group.variableReasons, ...nextRow.variableReasons };
                 group.output = nextRow.output;
                 group.outputs.push(...nextRow.outputs);
+                group.outputReasons.push(...nextRow.outputReasons);
                 group.stepEnd = stepNumber;
             } else if (settings.collapseConsecutiveConditions && shape instanceof Decision && lastStepWasDecision &&
                 previousRow?.shape instanceof Decision) {
                 Object.entries(nextRow.conditions).forEach(([id, conditions]) => {
                     previousRow.conditions[id] = [...(previousRow.conditions[id] ?? []), ...conditions];
+                    previousRow.conditionReasons[id] = [
+                        ...(previousRow.conditionReasons[id] ?? []),
+                        ...(nextRow.conditionReasons[id] ?? []),
+                    ];
                 });
                 previousRow.variables = nextRow.variables;
+                previousRow.variableReasons = { ...previousRow.variableReasons, ...nextRow.variableReasons };
                 previousRow.output = nextRow.output;
+                previousRow.outputReasons.push(...nextRow.outputReasons);
                 previousRow.stepEnd = stepNumber;
             } else {
                 const unchanged = previousRow &&
@@ -725,6 +1000,8 @@ export function initSimulationPanel() {
     });
     document.addEventListener("flowcraft:diagramchange", reset);
     document.addEventListener("flowcraft:settings", () => {
+        columnOrder = [...settings.simulationColumnOrder];
+        updateConfigureInputsVisibility();
         renderTable();
         if (!inputsPreview.hidden) renderInputsPreview();
     });

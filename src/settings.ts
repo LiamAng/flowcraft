@@ -11,11 +11,14 @@ export type Settings = {
     guides: boolean;
     showGrid: boolean;
     showSteps: boolean;
+    hideSteps: boolean;
     showStepNumbers: boolean;
     showShapeContentInSteps: boolean;
     processContentAsCode: boolean;
     setShapeContentBasedOnProgram: boolean;
+    collapseNonConflictingChanges: boolean;
     compressSimulationTable: boolean;
+    showReasonForValue: boolean;
     collapseConsecutiveConditions: boolean;
     collapseOtherSteps: boolean;
     autorun: boolean;
@@ -24,6 +27,7 @@ export type Settings = {
     simulationStepContentMaxWidth: number;
     valueAccuracy: number;
     simulationStepDelay: number;
+    simulationColumnOrder: string[];
 };
 
 export const defaultSettings: Settings = {
@@ -37,11 +41,14 @@ export const defaultSettings: Settings = {
     guides: true,
     showGrid: true,
     showSteps: false,
+    hideSteps: false,
     showStepNumbers: true,
     showShapeContentInSteps: true,
     processContentAsCode: true,
     setShapeContentBasedOnProgram: true,
+    collapseNonConflictingChanges: true,
     compressSimulationTable: true,
+    showReasonForValue: true,
     collapseConsecutiveConditions: true,
     collapseOtherSteps: true,
     autorun: true,
@@ -50,6 +57,7 @@ export const defaultSettings: Settings = {
     simulationStepContentMaxWidth: 200,
     valueAccuracy: 2,
     simulationStepDelay: 0,
+    simulationColumnOrder: [],
 };
 
 export const settings: Settings = { ...defaultSettings, inputs: {} };
@@ -63,9 +71,19 @@ export function sanitizeSettings(raw: unknown): Partial<Settings> {
     if (value.decisionBranchLabels === "yes-no" || value.decisionBranchLabels === "true-false") {
         result.decisionBranchLabels = value.decisionBranchLabels;
     }
-    (["readOnly", "snap", "snapResizeToGrid", "guides", "showGrid", "showSteps", "showStepNumbers", "showShapeContentInSteps", "processContentAsCode", "setShapeContentBasedOnProgram", "compressSimulationTable", "collapseConsecutiveConditions", "collapseOtherSteps", "autorun"] as const).forEach((key) => {
+    (["readOnly", "snap", "snapResizeToGrid", "guides", "showGrid", "showSteps", "hideSteps", "showStepNumbers", "showShapeContentInSteps", "processContentAsCode", "setShapeContentBasedOnProgram", "collapseNonConflictingChanges", "compressSimulationTable", "showReasonForValue", "collapseConsecutiveConditions", "collapseOtherSteps", "autorun"] as const).forEach((key) => {
         if (typeof value[key] === "boolean") result[key] = value[key] as boolean;
     });
+    if (typeof value.hideSteps === "boolean") {
+        result.showStepNumbers = !value.hideSteps;
+    } else if (typeof value.showStepNumbers === "boolean") {
+        result.hideSteps = !value.showStepNumbers;
+    }
+    if (typeof value.collapseNonConflictingChanges === "boolean") {
+        result.compressSimulationTable = value.collapseNonConflictingChanges;
+    } else if (typeof value.compressSimulationTable === "boolean") {
+        result.collapseNonConflictingChanges = value.compressSimulationTable;
+    }
     if (typeof value.showShapeContentInSteps === "boolean") {
         result.showShapeContentInSteps = value.showShapeContentInSteps;
     } else if (typeof value.showProcessContentInSteps === "boolean") {
@@ -91,6 +109,11 @@ export function sanitizeSettings(raw: unknown): Partial<Settings> {
         const delays = [0, 100, 250, 500, 1000];
         result.simulationStepDelay = delays.reduce((nearest, delay) =>
             Math.abs(delay - simulationStepDelay) < Math.abs(nearest - simulationStepDelay) ? delay : nearest, delays[0]);
+    }
+    if (Array.isArray(value.simulationColumnOrder)) {
+        result.simulationColumnOrder = value.simulationColumnOrder
+            .filter((column): column is string => typeof column === "string")
+            .slice(0, 200);
     }
     return result;
 }

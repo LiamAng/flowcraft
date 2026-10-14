@@ -9,7 +9,8 @@ const settingKeys = [
     "gridSize", "guides", "showGrid", "showSteps", "showStepNumbers", "showShapeContentInSteps",
     "processContentAsCode", "setShapeContentBasedOnProgram", "compressSimulationTable",
     "collapseConsecutiveConditions", "collapseOtherSteps", "autorun", "inputs", "simulationRatio",
-    "simulationStepContentMaxWidth", "valueAccuracy", "simulationStepDelay",
+    "simulationStepContentMaxWidth", "valueAccuracy", "simulationStepDelay", "hideSteps",
+    "collapseNonConflictingChanges", "showReasonForValue", "simulationColumnOrder",
 ] as const;
 const shapeTypes = ["process", "decision", "input-output", "initialization", "terminator"] as const;
 const directions = ["n", "e", "s", "w"] as const;
