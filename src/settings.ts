@@ -21,6 +21,7 @@ export type Settings = {
     showReasonForValue: boolean;
     collapseConsecutiveConditions: boolean;
     collapseOtherSteps: boolean;
+    collapsedInputOutputValueTiming: "first" | "last";
     autorun: boolean;
     inputs: Record<string, unknown>;
     simulationRatio: number;
@@ -51,6 +52,7 @@ export const defaultSettings: Settings = {
     showReasonForValue: true,
     collapseConsecutiveConditions: true,
     collapseOtherSteps: true,
+    collapsedInputOutputValueTiming: "first",
     autorun: true,
     inputs: {},
     simulationRatio: 0.32,
@@ -70,6 +72,9 @@ export function sanitizeSettings(raw: unknown): Partial<Settings> {
     if (typeof value.description === "string") result.description = value.description.slice(0, 500);
     if (value.decisionBranchLabels === "yes-no" || value.decisionBranchLabels === "true-false") {
         result.decisionBranchLabels = value.decisionBranchLabels;
+    }
+    if (value.collapsedInputOutputValueTiming === "first" || value.collapsedInputOutputValueTiming === "last") {
+        result.collapsedInputOutputValueTiming = value.collapsedInputOutputValueTiming;
     }
     (["readOnly", "snap", "snapResizeToGrid", "guides", "showGrid", "showSteps", "hideSteps", "showStepNumbers", "showShapeContentInSteps", "processContentAsCode", "setShapeContentBasedOnProgram", "collapseNonConflictingChanges", "compressSimulationTable", "showReasonForValue", "collapseConsecutiveConditions", "collapseOtherSteps", "autorun"] as const).forEach((key) => {
         if (typeof value[key] === "boolean") result[key] = value[key] as boolean;

@@ -11,6 +11,7 @@ const settingKeys = [
     "collapseConsecutiveConditions", "collapseOtherSteps", "autorun", "inputs", "simulationRatio",
     "simulationStepContentMaxWidth", "valueAccuracy", "simulationStepDelay", "hideSteps",
     "collapseNonConflictingChanges", "showReasonForValue", "simulationColumnOrder",
+    "collapsedInputOutputValueTiming",
 ] as const;
 const shapeTypes = ["process", "decision", "input-output", "initialization", "terminator"] as const;
 const directions = ["n", "e", "s", "w"] as const;

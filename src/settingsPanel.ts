@@ -40,6 +40,21 @@ export function initSettingsPanel(fileActions: { exportDiagram: () => void; expo
         branchLabelsSelect.appendChild(option);
     });
     branchLabelsLabel.appendChild(branchLabelsSelect);
+
+    const collapsedInputOutputValueTimingLabel = document.createElement("label");
+    collapsedInputOutputValueTimingLabel.textContent = "Variable values for collapsed input/output steps";
+    const collapsedInputOutputValueTimingSelect = document.createElement("select");
+    [
+        { value: "first", text: "First step (before later inputs)" },
+        { value: "last", text: "Last step (after later inputs)" },
+    ].forEach(({ value, text }) => {
+        const option = document.createElement("option");
+        option.value = value;
+        option.textContent = text;
+        collapsedInputOutputValueTimingSelect.appendChild(option);
+    });
+    collapsedInputOutputValueTimingLabel.appendChild(collapsedInputOutputValueTimingSelect);
+
     const error = document.createElement("p");
     error.className = "settings-error";
     error.hidden = true;
@@ -201,7 +216,7 @@ export function initSettingsPanel(fileActions: { exportDiagram: () => void; expo
     save.textContent = "Save";
     actionBar.append(newProjectButton, exportButton, exportImageButton, importButton, shareButton, reset, cancel, save);
 
-    form.append(title, chartTitleLabel, descriptionLabel, branchLabelsLabel, ...checks.map((c) => c.label), gridLabel, ratioLabel, accuracyLabel, stepContentWidthLabel, speedLabel, error, actionBar);
+    form.append(title, chartTitleLabel, descriptionLabel, branchLabelsLabel, ...checks.map((c) => c.label), collapsedInputOutputValueTimingLabel, gridLabel, ratioLabel, accuracyLabel, stepContentWidthLabel, speedLabel, error, actionBar);
     dialog.appendChild(form);
     document.body.appendChild(dialog);
     document.body.appendChild(shareValidationDialog);
@@ -210,6 +225,7 @@ export function initSettingsPanel(fileActions: { exportDiagram: () => void; expo
         chartTitleInput.value = values.title;
         descriptionInput.value = values.description;
         branchLabelsSelect.value = values.decisionBranchLabels;
+        collapsedInputOutputValueTimingSelect.value = values.collapsedInputOutputValueTiming;
         checks.forEach(({ input, key }) => {
             input.checked = values[key];
         });
@@ -255,6 +271,7 @@ export function initSettingsPanel(fileActions: { exportDiagram: () => void; expo
             title: chartTitleInput.value.trim(),
             description: descriptionInput.value.trim(),
             decisionBranchLabels: branchLabelsSelect.value as Settings["decisionBranchLabels"],
+            collapsedInputOutputValueTiming: collapsedInputOutputValueTimingSelect.value as Settings["collapsedInputOutputValueTiming"],
             ...Object.fromEntries(checks.map(({ input, key }) => [key, input.checked])),
             gridSize,
             simulationRatio,

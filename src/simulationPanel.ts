@@ -16,6 +16,7 @@ type SimulationRow = {
     output: unknown;
     outputs: unknown[];
     outputReasons: string[];
+    preferFirstVariables?: boolean;
 };
 
 type SimulationColumn = {
@@ -35,6 +36,16 @@ function inputVariables(shape: InputOutput): VariableDefinition[] {
         name: name.trim(),
         type: "string" as const,
     })).filter((variable) => variable.name);
+}
+
+function conditionColumnIds(shapes: Decision[]): Map<Decision, string> {
+    const occurrences = new Map<string, number>();
+    return new Map(shapes.map((shape) => {
+        const signature = `${shape.content.innerText.trim()}\u0000${shape.programCode.trim()}`;
+        const occurrence = occurrences.get(signature) ?? 0;
+        occurrences.set(signature, occurrence + 1);
+        return [shape, `condition:${encodeURIComponent(signature)}:${occurrence}`];
+    }));
 }
 
 function display(value: unknown, accuracy: number): string {
@@ -176,6 +187,7 @@ function cloneSimulationRow(row: SimulationRow): SimulationRow {
 }
 
 function mergeSimulationRows(base: SimulationRow, next: SimulationRow): SimulationRow {
+    const preferFirstVariables = base.preferFirstVariables || next.preferFirstVariables;
     const conditions = { ...base.conditions };
     Object.entries(next.conditions).forEach(([id, values]) => {
         conditions[id] = [...(conditions[id] ?? []), ...values];
@@ -187,8 +199,13 @@ function mergeSimulationRows(base: SimulationRow, next: SimulationRow): Simulati
     return {
         ...base,
         stepEnd: next.stepEnd,
-        variables: { ...next.variables },
-        variableReasons: { ...base.variableReasons, ...next.variableReasons },
+        variables: base.preferFirstVariables ? base.variables : next.variables,
+        variableReasons: base.preferFirstVariables
+            ? base.variableReasons
+            : next.preferFirstVariables
+                ? next.variableReasons
+                : { ...base.variableReasons, ...next.variableReasons },
+        preferFirstVariables,
         conditions,
         conditionReasons,
         output: next.output !== "" ? next.output : base.output,
@@ -572,6 +589,7 @@ export function initSimulationPanel() {
     let lastStepWasOther = false;
     let lastOtherRowIndex: number | null = null;
     let columnOrder: string[] = [...settings.simulationColumnOrder];
+    let draggedColumnId: string | null = null;
 
     const renderTable = () => {
         table.replaceChildren();
@@ -582,12 +600,13 @@ export function initSimulationPanel() {
             });
         });
         const decisionShapes = Shape.all.filter((shape) => shape instanceof Decision);
+        const conditionIds = conditionColumnIds(decisionShapes);
         const showOutputColumn = !(current === null && wholeOutput.length === 1);
         const availableColumns: SimulationColumn[] = [
             ...(settings.showStepNumbers ? [{ id: "step", title: "Step", kind: "step" as const }] : []),
             ...variableNames.map((name) => ({ id: `variable:${name}`, title: name, kind: "variable" as const, name })),
             ...decisionShapes.map((shape) => ({
-                id: `condition:${shape.id}`,
+                id: conditionIds.get(shape)!,
                 title: shape.content.textContent?.trim() || shape.id,
                 kind: "condition" as const,
                 shape,
@@ -595,11 +614,16 @@ export function initSimulationPanel() {
             ...(showOutputColumn ? [{ id: "output", title: "Output", kind: "output" as const }] : []),
         ];
         const availableIds = new Set(availableColumns.map(({ id }) => id));
+        // Keep remembered columns in the order while they are temporarily absent,
+        // such as variable columns between simulation reset and the first step.
         columnOrder = [
-            ...columnOrder.filter((id) => availableIds.has(id)),
+            ...columnOrder,
             ...availableColumns.map(({ id }) => id).filter((id) => !columnOrder.includes(id)),
         ];
-        const columns = columnOrder.map((id) => availableColumns.find((column) => column.id === id)).filter((column): column is SimulationColumn => Boolean(column));
+        const columns = columnOrder
+            .filter((id) => availableIds.has(id))
+            .map((id) => availableColumns.find((column) => column.id === id))
+            .filter((column): column is SimulationColumn => Boolean(column));
         const head = document.createElement("thead");
         const headerRow = document.createElement("tr");
         columns.forEach((column, index, all) => {
@@ -607,20 +631,30 @@ export function initSimulationPanel() {
             cell.textContent = column.title;
             cell.draggable = true;
             cell.addEventListener("dragstart", (event) => {
+                draggedColumnId = column.id;
+                if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
                 event.dataTransfer?.setData("text/plain", column.id);
             });
-            cell.addEventListener("dragover", (event) => event.preventDefault());
+            cell.addEventListener("dragend", () => { draggedColumnId = null; });
+            cell.addEventListener("dragover", (event) => {
+                event.preventDefault();
+                if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+            });
             cell.addEventListener("drop", (event) => {
                 event.preventDefault();
-                const draggedId = event.dataTransfer?.getData("text/plain");
+                event.stopPropagation();
+                const draggedId = event.dataTransfer?.getData("text/plain") || draggedColumnId;
                 if (!draggedId || draggedId === column.id) return;
                 const from = columnOrder.indexOf(draggedId);
-                const to = columnOrder.indexOf(column.id);
-                if (from < 0 || to < 0) return;
+                const target = columnOrder.indexOf(column.id);
+                if (from < 0 || target < 0) return;
+                const rect = cell.getBoundingClientRect();
+                let to = target + (event.clientX >= rect.left + rect.width / 2 ? 1 : 0);
                 columnOrder.splice(from, 1);
+                if (from < to) to -= 1;
                 columnOrder.splice(to, 0, draggedId);
                 applySettings({ simulationColumnOrder: [...columnOrder] });
-                renderTable();
+                draggedColumnId = null;
             });
             if (column.kind === "step" && settings.showShapeContentInSteps) {
                 cell.classList.add("simulation-step-content-column");
@@ -704,7 +738,8 @@ export function initSimulationPanel() {
                 }
              if (column.kind === "output") {
                 const output = document.createElement("td");
-                output.textContent = row.outputs.map((value) => display(value, settings.valueAccuracy)).join(" → ") ||
+                output.classList.add("simulation-output-cell");
+                output.textContent = row.outputs.map((value) => display(value, settings.valueAccuracy)).join("\n") ||
                     display(row.output, settings.valueAccuracy);
                 tr.appendChild(output);
             }
@@ -870,8 +905,12 @@ export function initSimulationPanel() {
             if (settings.collapseOtherSteps && isOtherShape && lastStepWasOther &&
                 lastOtherRowIndex !== null && rows[lastOtherRowIndex]) {
                 const group = rows[lastOtherRowIndex];
-                group.variables = nextRow.variables;
-                group.variableReasons = { ...group.variableReasons, ...nextRow.variableReasons };
+                if (settings.collapsedInputOutputValueTiming === "first") {
+                    group.preferFirstVariables = true;
+                } else {
+                    group.variables = nextRow.variables;
+                    group.variableReasons = { ...group.variableReasons, ...nextRow.variableReasons };
+                }
                 group.output = nextRow.output;
                 group.outputs.push(...nextRow.outputs);
                 group.outputReasons.push(...nextRow.outputReasons);
