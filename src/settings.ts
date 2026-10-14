@@ -41,7 +41,7 @@ export const defaultSettings: Settings = {
     guides: true,
     showGrid: true,
     showSteps: false,
-    hideSteps: false,
+    hideSteps: true,
     showStepNumbers: true,
     showShapeContentInSteps: true,
     processContentAsCode: true,
