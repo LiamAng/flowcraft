@@ -8,7 +8,7 @@ const settingKeys = [
     "title", "description", "decisionBranchLabels", "readOnly", "snap", "snapResizeToGrid",
     "gridSize", "guides", "showGrid", "showSteps", "showStepNumbers", "showShapeContentInSteps",
     "processContentAsCode", "setShapeContentBasedOnProgram", "compressSimulationTable",
-    "collapseConsecutiveConditions", "collapseOtherSteps", "autorun", "inputs", "simulationRatio",
+    "collapseConsecutiveConditions", "collapseOtherSteps", "hideOutputColumnIfSingleOutput", "autorun", "inputs", "simulationRatio",
     "simulationStepContentMaxWidth", "valueAccuracy", "simulationStepDelay", "hideSteps",
     "collapseNonConflictingChanges", "showReasonForValue", "simulationColumnOrder",
     "collapsedInputOutputValueTiming",

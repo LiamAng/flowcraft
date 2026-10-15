@@ -497,8 +497,16 @@ export function initSimulationPanel() {
         inputsPreview.replaceChildren();
         const entries = Object.entries(settings.inputs);
         if (entries.length === 0) {
-            inputsPreview.textContent = "No predefined inputs.";
+            inputsPreview.hidden = true;
+            showInputsButton.hidden = true;
             return;
+        }
+        const becomingAvailable = showInputsButton.hidden;
+        showInputsButton.hidden = false;
+        if (becomingAvailable) {
+            inputsPreview.hidden = false;
+            showInputsButton.textContent = "Hide inputs";
+            showInputsButton.setAttribute("aria-expanded", "true");
         }
         entries.forEach(([name, rawValues]) => {
             const line = document.createElement("div");
@@ -613,7 +621,7 @@ export function initSimulationPanel() {
         });
         const decisionShapes = Shape.all.filter((shape) => shape instanceof Decision);
         const conditionIds = conditionColumnIds(decisionShapes);
-        const showOutputColumn = !(current === null && wholeOutput.length === 1);
+        const showOutputColumn = !(settings.hideOutputColumnIfSingleOutput && current === null && wholeOutput.length === 1);
         const availableColumns: SimulationColumn[] = [
             ...(settings.showStepNumbers ? [{ id: "step", title: "Step", kind: "step" as const }] : []),
             ...variableNames.map((name) => ({ id: `variable:${name}`, title: name, kind: "variable" as const, name })),
@@ -1051,7 +1059,7 @@ export function initSimulationPanel() {
         columnOrder = [...settings.simulationColumnOrder];
         updateConfigureInputsVisibility();
         renderTable();
-        if (!inputsPreview.hidden) renderInputsPreview();
+        renderInputsPreview();
     });
 
     const autorun = () => {

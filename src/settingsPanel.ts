@@ -74,7 +74,7 @@ export function initSettingsPanel(fileActions: { exportDiagram: () => void; expo
     shareValidationActions.appendChild(closeShareValidation);
     shareValidationDialog.append(shareValidationTitle, shareValidationMessage, shareValidationIssues, shareValidationActions);
 
-    const checkbox = (key: "snap" | "snapResizeToGrid" | "guides" | "showGrid" | "readOnly" | "showSteps" | "hideSteps" | "showShapeContentInSteps" | "processContentAsCode" | "setShapeContentBasedOnProgram" | "collapseNonConflictingChanges" | "showReasonForValue" | "collapseConsecutiveConditions" | "collapseOtherSteps" | "autorun", text: string) => {
+    const checkbox = (key: "snap" | "snapResizeToGrid" | "guides" | "showGrid" | "readOnly" | "showSteps" | "hideSteps" | "showShapeContentInSteps" | "processContentAsCode" | "setShapeContentBasedOnProgram" | "collapseNonConflictingChanges" | "showReasonForValue" | "collapseConsecutiveConditions" | "collapseOtherSteps" | "hideOutputColumnIfSingleOutput" | "autorun", text: string) => {
         const label = document.createElement("label");
         label.className = "settings-check";
         const input = document.createElement("input");
@@ -97,6 +97,7 @@ export function initSettingsPanel(fileActions: { exportDiagram: () => void; expo
         checkbox("showReasonForValue", "Show reason for value"),
         checkbox("collapseConsecutiveConditions", "Collapse consecutive conditions into one row"),
         checkbox("collapseOtherSteps", "Collapse consecutive input/output steps into one row"),
+        checkbox("hideOutputColumnIfSingleOutput", "Hide output column if there is only one output"),
         checkbox("autorun", "Run simulation automatically on load"),
         checkbox("readOnly", "Read only"),
     ];

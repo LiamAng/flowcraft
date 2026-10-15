@@ -21,6 +21,7 @@ export type Settings = {
     showReasonForValue: boolean;
     collapseConsecutiveConditions: boolean;
     collapseOtherSteps: boolean;
+    hideOutputColumnIfSingleOutput: boolean;
     collapsedInputOutputValueTiming: "first" | "last";
     autorun: boolean;
     inputs: Record<string, unknown>;
@@ -52,6 +53,7 @@ export const defaultSettings: Settings = {
     showReasonForValue: true,
     collapseConsecutiveConditions: true,
     collapseOtherSteps: true,
+    hideOutputColumnIfSingleOutput: true,
     collapsedInputOutputValueTiming: "first",
     autorun: true,
     inputs: {},
@@ -76,7 +78,7 @@ export function sanitizeSettings(raw: unknown): Partial<Settings> {
     if (value.collapsedInputOutputValueTiming === "first" || value.collapsedInputOutputValueTiming === "last") {
         result.collapsedInputOutputValueTiming = value.collapsedInputOutputValueTiming;
     }
-    (["readOnly", "snap", "snapResizeToGrid", "guides", "showGrid", "showSteps", "hideSteps", "showStepNumbers", "showShapeContentInSteps", "processContentAsCode", "setShapeContentBasedOnProgram", "collapseNonConflictingChanges", "compressSimulationTable", "showReasonForValue", "collapseConsecutiveConditions", "collapseOtherSteps", "autorun"] as const).forEach((key) => {
+    (["readOnly", "snap", "snapResizeToGrid", "guides", "showGrid", "showSteps", "hideSteps", "showStepNumbers", "showShapeContentInSteps", "processContentAsCode", "setShapeContentBasedOnProgram", "collapseNonConflictingChanges", "compressSimulationTable", "showReasonForValue", "collapseConsecutiveConditions", "collapseOtherSteps", "hideOutputColumnIfSingleOutput", "autorun"] as const).forEach((key) => {
         if (typeof value[key] === "boolean") result[key] = value[key] as boolean;
     });
     if (typeof value.hideSteps === "boolean") {
