@@ -51,9 +51,14 @@ function conditionColumnIds(shapes: Decision[]): Map<Decision, string> {
 function display(value: unknown, accuracy: number): string {
     if (value === undefined) return "";
     if (value === null) return "null";
-    if (typeof value === "number") {
-        if (!Number.isFinite(value)) return String(value);
-        return Number.isInteger(value) ? String(value) : value.toFixed(accuracy);
+    const numericValue = typeof value === "number"
+        ? value
+        : typeof value === "string" && value.trim() !== "" && Number.isFinite(Number(value))
+            ? Number(value)
+            : null;
+    if (numericValue !== null) {
+        if (!Number.isFinite(numericValue)) return String(numericValue);
+        return Number.isInteger(numericValue) ? String(numericValue) : numericValue.toFixed(accuracy);
     }
     if (typeof value === "string") return value;
     if (typeof value === "object") {
@@ -100,9 +105,10 @@ function recordsEqual(left: Record<string, unknown>, right: Record<string, unkno
         leftKeys.every((key, index) => key === rightKeys[index] && valuesEqual(left[key], right[key]));
 }
 
-function formatExpressionValue(value: unknown): string {
+function formatExpressionValue(value: unknown, accuracy: number): string {
     if (typeof value === "string") return JSON.stringify(value);
-    if (typeof value === "number" || typeof value === "boolean" || value === null) return String(value);
+    if (typeof value === "number") return display(value, accuracy);
+    if (typeof value === "boolean" || value === null) return String(value);
     if (value === undefined) return "undefined";
     try {
         return JSON.stringify(value);
@@ -111,48 +117,48 @@ function formatExpressionValue(value: unknown): string {
     }
 }
 
-function substituteExpressionValues(expression: string, scope: Record<string, unknown>): string {
+function substituteExpressionValues(expression: string, scope: Record<string, unknown>, accuracy: number): string {
     const keywords = new Set(["true", "false", "null", "undefined", "NaN", "Infinity"]);
     return expression.replace(/\b[A-Za-z_$][\w$]*\b/g, (name, offset, source) => {
         const previous = source[offset - 1];
         if (previous === "." || keywords.has(name) || !Object.prototype.hasOwnProperty.call(scope, name)) {
             return name;
         }
-        return formatExpressionValue(scope[name]);
+        return formatExpressionValue(scope[name], accuracy);
     }).replace(/\s+/g, " ").trim();
 }
 
-function assignmentReasons(code: string, before: Record<string, unknown>, after: Record<string, unknown>): Record<string, string> {
+function assignmentReasons(code: string, before: Record<string, unknown>, after: Record<string, unknown>, accuracy: number): Record<string, string> {
     const reasons: Record<string, string> = {};
     const statements = code.split(/[;\r\n]+/).map((statement) => statement.trim()).filter(Boolean);
     statements.forEach((statement) => {
         const increment = statement.match(/^([A-Za-z_$][\w$]*)\s*(\+\+|--)$/);
         if (increment) {
             const [, name, operator] = increment;
-            reasons[name] = `${name} = ${formatExpressionValue(before[name])} ${operator === "++" ? "+" : "-"} 1`;
+            reasons[name] = `${name} = ${formatExpressionValue(before[name], accuracy)} ${operator === "++" ? "+" : "-"} 1`;
             return;
         }
         const compound = statement.match(/^([A-Za-z_$][\w$]*)\s*([+\-*/%])=\s*(.+)$/);
         if (compound) {
             const [, name, operator, expression] = compound;
-            reasons[name] = `${name} = ${formatExpressionValue(before[name])} ${operator} ${substituteExpressionValues(expression, before)}`;
+            reasons[name] = `${name} = ${formatExpressionValue(before[name], accuracy)} ${operator} ${substituteExpressionValues(expression, before, accuracy)}`;
             return;
         }
         const assignment = statement.match(/^(?:(?:let|var|const)\s+)?([A-Za-z_$][\w$]*)\s*=\s*(?!=)(.+)$/);
         if (assignment) {
             const [, name, expression] = assignment;
-            reasons[name] = `${name} = ${substituteExpressionValues(expression, before)}`;
+            reasons[name] = `${name} = ${substituteExpressionValues(expression, before, accuracy)}`;
         }
     });
     Object.keys(after).forEach((name) => {
         if (!valuesEqual(before[name], after[name]) && !reasons[name]) {
-            reasons[name] = `${name} = ${formatExpressionValue(after[name])}`;
+            reasons[name] = `${name} = ${formatExpressionValue(after[name], accuracy)}`;
         }
     });
     return reasons;
 }
 
-function inferredVariableReason(name: string, previous: unknown, value: unknown): string {
+function inferredVariableReason(name: string, previous: unknown, value: unknown, accuracy: number): string {
     const previousNumber = typeof previous === "number" || (typeof previous === "string" && previous.trim() !== "")
         ? Number(previous)
         : NaN;
@@ -160,10 +166,10 @@ function inferredVariableReason(name: string, previous: unknown, value: unknown)
         ? Number(value)
         : NaN;
     if (Number.isFinite(previousNumber) && Number.isFinite(valueNumber)) {
-        if (valueNumber === previousNumber + 1) return `${name} = ${previous} + 1`;
-        if (valueNumber === previousNumber - 1) return `${name} = ${previous} - 1`;
+        if (valueNumber === previousNumber + 1) return `${name} = ${formatExpressionValue(previous, accuracy)} + 1`;
+        if (valueNumber === previousNumber - 1) return `${name} = ${formatExpressionValue(previous, accuracy)} - 1`;
     }
-    return `${name} = ${formatExpressionValue(value)}`;
+    return `${name} = ${formatExpressionValue(value, accuracy)}`;
 }
 
 function cloneSimulationRow(row: SimulationRow): SimulationRow {
@@ -263,7 +269,7 @@ function collapseNonConflictingRows(
             Object.entries(displayRow.variables).forEach(([name, value]) => {
                 if (!supportsReasonValue(value) ||
                     valuesEqual(previousRaw?.variables[name], value) || displayRow.variableReasons[name]) return;
-                displayRow.variableReasons[name] = inferredVariableReason(name, previousRaw?.variables[name], value);
+                displayRow.variableReasons[name] = inferredVariableReason(name, previousRaw?.variables[name], value, settings.valueAccuracy);
             });
         }
         const rowChanges = changedVisibleColumns(previousRaw, displayRow, variableNames, decisionShapes, showOutputColumn);
@@ -734,7 +740,7 @@ export function initSimulationPanel() {
                 const hasChanged = previousRow && !valuesEqual(previousRow.variables[name], row.variables[name]);
                 const fallbackReason = !isInputRow && hasChanged &&
                     supportsReasonValue(row.variables[name])
-                    ? inferredVariableReason(name, previousRow.variables[name], row.variables[name])
+                    ? inferredVariableReason(name, previousRow.variables[name], row.variables[name], settings.valueAccuracy)
                     : undefined;
                 cell.textContent = displayReasonValue(
                     row.variables[name],
@@ -866,17 +872,17 @@ export function initSimulationPanel() {
         } else if (shape instanceof Decision) {
             if (!shape.programCode.trim()) throw new Error(`Enter a true/false expression in Decision ${shape.id}'s code.`);
             condition = Boolean(runtime.evaluate(shape.programCode));
-            conditionReason = substituteExpressionValues(shape.programCode, scopeBeforeStep);
+            conditionReason = substituteExpressionValues(shape.programCode, scopeBeforeStep, settings.valueAccuracy);
         } else if (shape instanceof InputOutput && shape.inputOutputType === "output") {
             if (!shape.programCode.trim()) throw new Error(`Enter an expression in Output ${shape.id}'s code.`);
             lastOutput = runtime.evaluate(shape.programCode);
-            outputReason = substituteExpressionValues(shape.programCode, scopeBeforeStep);
+            outputReason = substituteExpressionValues(shape.programCode, scopeBeforeStep, settings.valueAccuracy);
             wholeOutput.push(lastOutput);
         } else if (shape instanceof Process) {
             const processCode = settings.processContentAsCode ? shape.content.innerText : shape.programCode;
             if (processCode.trim()) {
                 runtime.exec(processCode);
-                variableReasons = assignmentReasons(processCode, scopeBeforeStep, runtime.getScope());
+                variableReasons = assignmentReasons(processCode, scopeBeforeStep, runtime.getScope(), settings.valueAccuracy);
             }
         } else if (shape instanceof Initialization) {
             if (shape.variables.length === 0) throw new Error(`Add at least one variable to Initialization ${shape.id}.`);
@@ -891,14 +897,14 @@ export function initSimulationPanel() {
                     return;
                 }
                 runtime.getScope()[name] = type === "number" ? Number(value) : String(value);
-                variableReasons[name] = `${name} = ${formatExpressionValue(runtime.getScope()[name])}`;
+                variableReasons[name] = `${name} = ${formatExpressionValue(runtime.getScope()[name], settings.valueAccuracy)}`;
             });
         }
         if (!(shape instanceof InputOutput && shape.inputOutputType === "input")) {
             Object.entries(runtime.getScope()).forEach(([name, value]) => {
                 if ((typeof value === "number" || typeof value === "boolean") &&
                     !valuesEqual(scopeBeforeStep[name], value) && !variableReasons[name]) {
-                    variableReasons[name] = `${name} = ${formatExpressionValue(value)}`;
+                    variableReasons[name] = `${name} = ${formatExpressionValue(value, settings.valueAccuracy)}`;
                 }
             });
         }
@@ -1059,6 +1065,7 @@ export function initSimulationPanel() {
         columnOrder = [...settings.simulationColumnOrder];
         updateConfigureInputsVisibility();
         renderTable();
+        if (!wholeOutputPanel.hidden) renderWholeOutput();
         renderInputsPreview();
     });
 
