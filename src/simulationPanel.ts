@@ -100,14 +100,6 @@ function recordsEqual(left: Record<string, unknown>, right: Record<string, unkno
         leftKeys.every((key, index) => key === rightKeys[index] && valuesEqual(left[key], right[key]));
 }
 
-function columnColor(name: string): string {
-    let hash = 0;
-    for (const character of name) {
-        hash = (hash * 31 + character.charCodeAt(0)) | 0;
-    }
-    return `hsl(${Math.abs(hash) % 360} 75% 92%)`;
-}
-
 function formatExpressionValue(value: unknown): string {
     if (typeof value === "string") return JSON.stringify(value);
     if (typeof value === "number" || typeof value === "boolean" || value === null) return String(value);
@@ -251,8 +243,21 @@ function collapseNonConflictingRows(
     let groupChanges = new Set<string>();
     let previousRaw: SimulationRow | null = null;
 
-    sourceRows.forEach((row) => {
+    sourceRows.forEach((row, index) => {
         const displayRow = cloneSimulationRow(row);
+        // An output immediately followed by an input is a prompt. Keep it on
+        // its own row so it doesn't get absorbed into the following guess.
+        const isPrompt = row.shape instanceof InputOutput && row.shape.inputOutputType === "output" &&
+            sourceRows[index + 1]?.shape instanceof InputOutput &&
+            (sourceRows[index + 1].shape as InputOutput).inputOutputType === "input";
+        if (isPrompt) {
+            if (group) collapsed.push(group);
+            collapsed.push(displayRow);
+            group = null;
+            groupChanges = new Set<string>();
+            previousRaw = displayRow;
+            return;
+        }
         const isInput = row.shape instanceof InputOutput && row.shape.inputOutputType === "input";
         if (!isInput && previousRaw) {
             Object.entries(displayRow.variables).forEach(([name, value]) => {
@@ -264,7 +269,14 @@ function collapseNonConflictingRows(
         const rowChanges = changedVisibleColumns(previousRaw, displayRow, variableNames, decisionShapes, showOutputColumn);
         const isInitialization = displayRow.shape instanceof Initialization;
         const groupIsInitialization = group?.shape instanceof Initialization;
-        const conflicts = [...rowChanges].some((change) => groupChanges.has(change));
+        // Feedback output belongs with the input/condition steps for that
+        // guess. A prompt is already isolated above, so this only combines
+        // the subsequent feedback with its related simulation steps.
+        const feedbackOnly = displayRow.shape instanceof InputOutput &&
+            displayRow.shape.inputOutputType === "output" && group?.outputs.length === 0;
+        const conflicts = [...rowChanges].some((change) =>
+            !(feedbackOnly && change === "output") && groupChanges.has(change)
+        );
         if (!group || isInitialization || groupIsInitialization || conflicts) {
             if (group) collapsed.push(group);
             group = displayRow;
@@ -626,7 +638,7 @@ export function initSimulationPanel() {
             .filter((column): column is SimulationColumn => Boolean(column));
         const head = document.createElement("thead");
         const headerRow = document.createElement("tr");
-        columns.forEach((column, index, all) => {
+        columns.forEach((column) => {
             const cell = document.createElement("th");
             cell.textContent = column.title;
             cell.draggable = true;
@@ -662,7 +674,6 @@ export function initSimulationPanel() {
                 cell.style.minWidth = `${settings.simulationStepContentMaxWidth}px`;
                 cell.style.maxWidth = `${settings.simulationStepContentMaxWidth}px`;
             }
-            if (column.kind !== "step" && index > 0 && index < all.length - 1) cell.style.backgroundColor = columnColor(column.title);
             headerRow.appendChild(cell);
         });
         head.appendChild(headerRow);
@@ -722,7 +733,6 @@ export function initSimulationPanel() {
                     row.variableReasons[name] ?? fallbackReason,
                     settings.valueAccuracy
                 );
-                cell.style.backgroundColor = columnColor(name);
                  tr.appendChild(cell);
                 }
              if (column.kind === "condition" && column.shape) {
@@ -733,7 +743,6 @@ export function initSimulationPanel() {
                 cell.textContent = conditions?.map((condition, index) =>
                     displayReasonValue(condition, reasons[index], settings.valueAccuracy)
                 ).join(" → ") ?? "";
-                cell.style.backgroundColor = columnColor(`condition:${shape.id}`);
                  tr.appendChild(cell);
                 }
              if (column.kind === "output") {
