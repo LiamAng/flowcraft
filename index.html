@@ -564,6 +564,56 @@
             padding: 4px;
         }
 
+        .simulation-input-cases {
+            display: grid;
+            grid-template-columns: minmax(100px, 0.8fr) minmax(120px, 1.2fr);
+            gap: 8px;
+            margin: 4px 0 12px;
+            padding: 12px;
+            border: 1px solid #bfdbfe;
+            border-radius: 10px;
+            background: linear-gradient(135deg, #eff6ff, #f8fafc);
+        }
+
+        .simulation-input-cases select,
+        .simulation-input-cases input {
+            box-sizing: border-box;
+            width: 100%;
+            min-width: 0;
+            padding: 9px 10px;
+            border: 1px solid #cbd5e1;
+            border-radius: 7px;
+            background: #fff;
+            color: #0f172a;
+            font: 13px system-ui, sans-serif;
+        }
+
+        .simulation-input-cases input {
+            user-select: text;
+        }
+
+        .simulation-input-cases button {
+            padding: 8px 10px;
+            border: 1px solid #bfdbfe;
+            border-radius: 7px;
+            background: #fff;
+            color: #1d4ed8;
+            font: 600 12px system-ui, sans-serif;
+            cursor: pointer;
+        }
+
+        .simulation-input-cases button:hover:not(:disabled),
+        .simulation-input-cases button:focus-visible {
+            border-color: #60a5fa;
+            background: #dbeafe;
+            outline: none;
+        }
+
+        .simulation-input-cases button:disabled {
+            cursor: default;
+            opacity: 0.45;
+        }
+
         .simulation-header {
             display: flex;
             flex: 0 0 auto;
