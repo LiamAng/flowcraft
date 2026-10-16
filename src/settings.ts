@@ -25,6 +25,7 @@ export type Settings = {
     collapsedInputOutputValueTiming: "first" | "last";
     autorun: boolean;
     inputs: Record<string, unknown>;
+    inputSets: Array<{ name: string; inputs: Record<string, unknown> }>;
     simulationRatio: number;
     simulationStepContentMaxWidth: number;
     valueAccuracy: number;
@@ -57,6 +58,7 @@ export const defaultSettings: Settings = {
     collapsedInputOutputValueTiming: "first",
     autorun: true,
     inputs: {},
+    inputSets: [],
     simulationRatio: 0.32,
     simulationStepContentMaxWidth: 200,
     valueAccuracy: 2,
@@ -101,6 +103,20 @@ export function sanitizeSettings(raw: unknown): Partial<Settings> {
     }
     if (value.inputs && typeof value.inputs === "object" && !Array.isArray(value.inputs)) {
         result.inputs = { ...(value.inputs as Record<string, unknown>) };
+    }
+    if (Array.isArray(value.inputSets)) {
+        result.inputSets = value.inputSets
+            .filter((set): set is { name: string; inputs: Record<string, unknown> } =>
+                Boolean(set) && typeof set === "object" && !Array.isArray(set) &&
+                typeof (set as { name?: unknown }).name === "string" &&
+                Boolean((set as { inputs?: unknown }).inputs) &&
+                typeof (set as { inputs?: unknown }).inputs === "object" &&
+                !Array.isArray((set as { inputs?: unknown }).inputs))
+            .slice(0, 50)
+            .map((set, index) => ({
+                name: set.name.trim().slice(0, 80) || `Set ${index + 1}`,
+                inputs: { ...set.inputs },
+            }));
     }
     if (typeof value.simulationRatio === "number" && Number.isFinite(value.simulationRatio)) {
         result.simulationRatio = Math.max(0.15, Math.min(0.7, value.simulationRatio));
@@ -147,5 +163,5 @@ export function resetSettings() {
 }
 
 export function snapshotSettings(): Settings {
-    return { ...settings, inputs: { ...settings.inputs } };
+    return { ...settings, inputs: { ...settings.inputs }, inputSets: settings.inputSets.map((set) => ({ ...set, inputs: { ...set.inputs } })) };
 }

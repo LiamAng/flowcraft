@@ -21,6 +21,20 @@ export function createSimulationInputsControl(): HTMLButtonElement {
     heading.textContent = "Simulation inputs";
     const inputsArea = document.createElement("div");
     inputsArea.className = "simulation-input-list";
+    const setBar = document.createElement("div");
+    setBar.className = "simulation-input-cases";
+    const setSelect = document.createElement("select");
+    setSelect.setAttribute("aria-label", "Input case");
+    const setName = document.createElement("input");
+    setName.placeholder = "Case name";
+    setName.setAttribute("aria-label", "Case name");
+    const addSet = document.createElement("button");
+    addSet.type = "button";
+    addSet.textContent = "Add case";
+    const removeSet = document.createElement("button");
+    removeSet.type = "button";
+    removeSet.textContent = "Remove case";
+    setBar.append(setSelect, setName, addSet, removeSet);
     const error = document.createElement("p");
     error.className = "settings-error";
     error.hidden = true;
@@ -36,11 +50,36 @@ export function createSimulationInputsControl(): HTMLButtonElement {
     save.type = "submit";
     save.textContent = "Save";
     actions.append(addInput, cancel, save);
-    form.append(heading, inputsArea, error, actions);
+    form.append(heading, setBar, inputsArea, error, actions);
     dialog.appendChild(form);
     document.body.appendChild(dialog);
 
     let inputRows: InputRow[] = [];
+    let sets: Array<{ name: string; inputs: Record<string, unknown> }> = [];
+    let selectedSet = 0;
+    const saveCurrent = () => {
+        if (!sets[selectedSet]) return;
+        const inputs: Record<string, unknown> = {};
+        inputRows.forEach((row) => {
+            const name = row.name.value.trim();
+            if (!name) return;
+            const values = row.values.map((input) => row.type.value === "number" ? Number(input.value) : input.value);
+            inputs[name] = values.length === 1 ? values[0] : values;
+        });
+        sets[selectedSet] = { name: setName.value.trim() || `Case ${selectedSet + 1}`, inputs };
+    };
+    const refreshSets = () => {
+        setSelect.replaceChildren();
+        sets.forEach((set, index) => {
+            const option = document.createElement("option");
+            option.value = String(index);
+            option.textContent = set.name || `Case ${index + 1}`;
+            setSelect.appendChild(option);
+        });
+        setSelect.value = String(selectedSet);
+        setName.value = sets[selectedSet]?.name ?? "";
+        removeSet.disabled = sets.length <= 1;
+    };
     const addInputRow = (nameValue = "", rawValue: unknown = "") => {
         const row = document.createElement("div");
         row.className = "simulation-input-row";
@@ -108,11 +147,41 @@ export function createSimulationInputsControl(): HTMLButtonElement {
         inputRows.push({ row, name, type, values });
     };
     const fill = () => {
+        sets = settings.inputSets.length > 0
+            ? settings.inputSets.map((set) => ({ name: set.name, inputs: { ...set.inputs } }))
+            : [{ name: "Case 1", inputs: { ...settings.inputs } }];
+        selectedSet = 0;
+        refreshSets();
         inputsArea.replaceChildren();
         inputRows = [];
-        Object.entries(settings.inputs).forEach(([name, value]) => addInputRow(name, value));
+        Object.entries(sets[0].inputs).forEach(([name, value]) => addInputRow(name, value));
         error.hidden = true;
     };
+
+    const loadSet = (index: number) => {
+        saveCurrent();
+        selectedSet = index;
+        refreshSets();
+        inputsArea.replaceChildren();
+        inputRows = [];
+        Object.entries(sets[index].inputs).forEach(([name, value]) => addInputRow(name, value));
+    };
+    setSelect.addEventListener("change", () => loadSet(Number(setSelect.value)));
+    addSet.addEventListener("click", () => {
+        saveCurrent();
+        sets.push({ name: `Case ${sets.length + 1}`, inputs: {} });
+        loadSet(sets.length - 1);
+    });
+    removeSet.addEventListener("click", () => {
+        if (sets.length <= 1) return;
+        sets.splice(selectedSet, 1);
+        selectedSet = Math.min(selectedSet, sets.length - 1);
+        inputsArea.replaceChildren();
+        inputRows = [];
+        refreshSets();
+        Object.entries(sets[selectedSet].inputs).forEach(([name, value]) => addInputRow(name, value));
+    });
+    setName.addEventListener("input", () => { if (sets[selectedSet]) sets[selectedSet].name = setName.value; refreshSets(); });
 
     button.addEventListener("click", () => {
         fill();
@@ -122,6 +191,7 @@ export function createSimulationInputsControl(): HTMLButtonElement {
     cancel.addEventListener("click", () => dialog.close());
     form.addEventListener("submit", (event) => {
         event.preventDefault();
+        saveCurrent();
         const inputs: Record<string, unknown> = {};
         for (const row of inputRows) {
             const name = row.name.value.trim();
@@ -146,7 +216,8 @@ export function createSimulationInputsControl(): HTMLButtonElement {
             }
             inputs[name] = values.length === 1 ? values[0] : values;
         }
-        applySettings({ inputs });
+        sets[selectedSet].inputs = inputs;
+        applySettings({ inputSets: sets, inputs: sets[0]?.inputs ?? {} });
         dialog.close();
     });
 

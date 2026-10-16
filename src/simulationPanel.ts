@@ -6,6 +6,7 @@ import { applySettings, settings } from "./settings";
 import { createSimulationInputsControl } from "./simulationInputsDialog";
 
 type SimulationRow = {
+    scenario?: string;
     step: number;
     stepEnd: number;
     shape: Shape;
@@ -616,6 +617,7 @@ export function initSimulationPanel() {
     let lastOtherRowIndex: number | null = null;
     let columnOrder: string[] = [...settings.simulationColumnOrder];
     let draggedColumnId: string | null = null;
+    let currentScenario = "";
 
     const renderTable = () => {
         table.replaceChildren();
@@ -698,6 +700,15 @@ export function initSimulationPanel() {
             ? collapseNonConflictingRows(rows, variableNames, decisionShapes, showOutputColumn)
             : rows;
         visibleRows.forEach((row, rowIndex) => {
+            if (row.scenario && row.scenario !== visibleRows[rowIndex - 1]?.scenario) {
+                const section = document.createElement("tr");
+                section.className = "simulation-scenario-header";
+                const label = document.createElement("th");
+                label.colSpan = Math.max(1, columns.length);
+                label.textContent = row.scenario;
+                section.appendChild(label);
+                body.appendChild(section);
+            }
             const tr = document.createElement("tr");
             columns.forEach((column) => {
             if (column.kind === "step") {
@@ -912,6 +923,7 @@ export function initSimulationPanel() {
         executedSteps = stepNumber;
         if (!(shape instanceof Terminator)) {
             const nextRow: SimulationRow = {
+                scenario: currentScenario,
                 step: stepNumber,
                 stepEnd: stepNumber,
                 shape,
@@ -1032,15 +1044,38 @@ export function initSimulationPanel() {
         runButton.disabled = true;
         runWithoutInputsButton.disabled = true;
         let finished = false;
+        const originalInputs = settings.inputs;
         try {
-            while (await step(usePredefinedInputs, onProgress)) {
-                onProgress?.(`Running simulation · Step ${executedSteps}`);
-                await new Promise<void>((resolve) => window.setTimeout(resolve, settings.simulationStepDelay));
+            const scenarios = usePredefinedInputs && settings.inputSets.length > 0
+                ? settings.inputSets
+                : [{ name: "Case 1", inputs: originalInputs }];
+            const combinedRows: SimulationRow[] = [];
+            const combinedOutput: unknown[] = [];
+            for (const scenario of scenarios) {
+                currentScenario = scenario.name;
+                settings.inputs = scenario.inputs;
+                reset();
+                while (await step(usePredefinedInputs, onProgress)) {
+                    onProgress?.(`Running ${scenario.name} · Step ${executedSteps}`);
+                    await new Promise<void>((resolve) => window.setTimeout(resolve, settings.simulationStepDelay));
+                }
+                if (status.classList.contains("error") || status.textContent !== "Finished") break;
+                combinedRows.push(...rows);
+                combinedOutput.push(...wholeOutput);
+                rows = [...combinedRows];
+                wholeOutput = [...combinedOutput];
+                renderTable();
             }
-            finished = status.textContent === "Finished";
+            currentScenario = "";
+            rows = [...combinedRows];
+            wholeOutput = [...combinedOutput];
+            finished = combinedRows.length > 0 && !status.classList.contains("error") && status.textContent === "Finished";
+            if (finished) renderWholeOutput();
         } catch (error) {
             setError(error);
         } finally {
+            settings.inputs = originalInputs;
+            currentScenario = "";
             running = false;
             nextButton.disabled = false;
             runButton.disabled = false;
@@ -1072,14 +1107,14 @@ export function initSimulationPanel() {
     const autorun = () => {
         if (!settings.autorun || Shape.all.length === 0) return;
         try {
-            const inputValues = settings.inputs;
             const inputs = Shape.all.filter((shape): shape is InputOutput =>
                 shape instanceof InputOutput && shape.inputOutputType === "input"
             );
-            const missing = inputs.flatMap((shape) => inputVariables(shape).filter(({ name }) =>
-                !Object.prototype.hasOwnProperty.call(inputValues, name) ||
-                (Array.isArray(inputValues[name]) && inputValues[name].length === 0)
-            ).map(({ name }) => name));
+            const inputSets = settings.inputSets.length > 0 ? settings.inputSets : [{ name: "Case 1", inputs: settings.inputs }];
+            const missing = inputSets.flatMap((set) => inputs.flatMap((shape) => inputVariables(shape).filter(({ name }) =>
+                !Object.prototype.hasOwnProperty.call(set.inputs, name) ||
+                (Array.isArray(set.inputs[name]) && set.inputs[name].length === 0)
+            ).map(({ name }) => `${set.name}: ${name}`)));
             if (missing.length > 0) {
                 throw new Error(`Autorun requires simulation inputs in settings for: ${[...new Set(missing)].join(", ")}.`);
             }
