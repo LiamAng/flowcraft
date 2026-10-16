@@ -239,7 +239,7 @@ function changedVisibleColumns(
     return changes;
 }
 
-function collapseNonConflictingRows(
+function collapseRowsWithinCase(
     sourceRows: SimulationRow[],
     variableNames: string[],
     decisionShapes: Decision[],
@@ -295,6 +295,29 @@ function collapseNonConflictingRows(
         previousRaw = displayRow;
     });
     if (group) collapsed.push(group);
+    return collapsed;
+}
+
+function collapseNonConflictingRows(
+    sourceRows: SimulationRow[],
+    variableNames: string[],
+    decisionShapes: Decision[],
+    showOutputColumn: boolean
+): SimulationRow[] {
+    const collapsed: SimulationRow[] = [];
+    let caseRows: SimulationRow[] = [];
+    let currentCase: string | undefined;
+    sourceRows.forEach((row) => {
+        if (caseRows.length > 0 && row.scenario !== currentCase) {
+            collapsed.push(...collapseRowsWithinCase(caseRows, variableNames, decisionShapes, showOutputColumn));
+            caseRows = [];
+        }
+        currentCase = row.scenario;
+        caseRows.push(row);
+    });
+    if (caseRows.length > 0) {
+        collapsed.push(...collapseRowsWithinCase(caseRows, variableNames, decisionShapes, showOutputColumn));
+    }
     return collapsed;
 }
 
@@ -479,13 +502,14 @@ export function initSimulationPanel() {
     runWithoutInputsButton.textContent = "Run (no inputs)";
     runWithoutInputsButton.title = "Run without predefined inputs";
     runWithoutInputsButton.setAttribute("aria-label", "Run without predefined inputs");
-    const showInputsButton = document.createElement("button");
-    showInputsButton.type = "button";
-    showInputsButton.textContent = "Hide inputs";
-    showInputsButton.title = "Hide predefined inputs";
-    showInputsButton.setAttribute("aria-label", "Hide predefined inputs");
-    showInputsButton.setAttribute("aria-expanded", "true");
     const configureInputsButton = createSimulationInputsControl();
+    const toggleInputsButton = document.createElement("button");
+    toggleInputsButton.type = "button";
+    toggleInputsButton.textContent = "Hide inputs";
+    toggleInputsButton.title = "Hide predefined inputs in case headers";
+    toggleInputsButton.setAttribute("aria-label", "Hide predefined inputs");
+    toggleInputsButton.setAttribute("aria-expanded", "true");
+    let showPredefinedInputs = true;
     const updateConfigureInputsVisibility = () => {
         configureInputsButton.hidden = settings.readOnly;
     };
@@ -494,46 +518,7 @@ export function initSimulationPanel() {
     status.className = "simulation-status";
     status.setAttribute("role", "status");
 
-    controls.append(nextButton, runButton, resetButton, runWithoutInputsButton, configureInputsButton, showInputsButton);
-
-    const inputsPreview = document.createElement("div");
-    inputsPreview.className = "simulation-input-preview";
-    inputsPreview.hidden = false;
-    inputsPreview.setAttribute("aria-label", "Predefined simulation inputs");
-    const renderInputsPreview = () => {
-        inputsPreview.replaceChildren();
-        const entries = Object.entries(settings.inputs);
-        if (entries.length === 0) {
-            inputsPreview.hidden = true;
-            showInputsButton.hidden = true;
-            return;
-        }
-        const becomingAvailable = showInputsButton.hidden;
-        showInputsButton.hidden = false;
-        if (becomingAvailable) {
-            inputsPreview.hidden = false;
-            showInputsButton.textContent = "Hide inputs";
-            showInputsButton.setAttribute("aria-expanded", "true");
-        }
-        entries.forEach(([name, rawValues]) => {
-            const line = document.createElement("div");
-            const values = inputSequence(rawValues);
-            line.textContent = `${name}: ${values.length > 0
-                ? values.map((value) => typeof value === "string" ? JSON.stringify(value) : display(value, settings.valueAccuracy)).join(", ")
-                : "(no values)"}`;
-            inputsPreview.appendChild(line);
-        });
-    };
-    renderInputsPreview();
-    showInputsButton.addEventListener("click", () => {
-        const visible = inputsPreview.hidden;
-        inputsPreview.hidden = !visible;
-        showInputsButton.setAttribute("aria-expanded", String(visible));
-        showInputsButton.textContent = `${visible ? "Hide" : "Show"} inputs`;
-        showInputsButton.title = `${visible ? "Hide" : "Show"} predefined inputs`;
-        showInputsButton.setAttribute("aria-label", `${visible ? "Hide" : "Show"} predefined inputs`);
-        if (visible) renderInputsPreview();
-    });
+    controls.append(nextButton, runButton, resetButton, runWithoutInputsButton, configureInputsButton, toggleInputsButton);
 
     const tableWrapper = document.createElement("div");
     tableWrapper.className = "simulation-table-wrapper";
@@ -548,7 +533,7 @@ export function initSimulationPanel() {
     const wholeOutputContent = document.createElement("pre");
     wholeOutputContent.className = "simulation-output-content";
     wholeOutputPanel.append(wholeOutputHeading, wholeOutputContent);
-    panel.append(header, controls, inputsPreview, tableWrapper, wholeOutputPanel, status);
+    panel.append(header, controls, tableWrapper, wholeOutputPanel, status);
     document.body.appendChild(panel);
     document.body.appendChild(splitter);
     document.body.appendChild(panelToggle);
@@ -608,6 +593,7 @@ export function initSimulationPanel() {
     let previousConnection: LinkRecord | null = null;
     let lastOutput: unknown = "";
     let wholeOutput: unknown[] = [];
+    let wholeOutputCases: Array<{ name: string; values: unknown[] }> = [];
     let rows: SimulationRow[] = [];
     let running = false;
     let executedSteps = 0;
@@ -705,7 +691,23 @@ export function initSimulationPanel() {
                 section.className = "simulation-scenario-header";
                 const label = document.createElement("th");
                 label.colSpan = Math.max(1, columns.length);
-                label.textContent = row.scenario;
+                const caseName = document.createElement("strong");
+                caseName.textContent = `${row.scenario}:`;
+                const caseInputs = settings.inputSets.find(({ name }) => name === row.scenario)?.inputs ?? settings.inputs;
+                const summary = Object.entries(caseInputs).map(([name, rawValues]) => {
+                    const values = inputSequence(rawValues);
+                    const formatted = values.map((value) => typeof value === "string"
+                        ? JSON.stringify(value)
+                        : display(value, settings.valueAccuracy)).join(", ");
+                    return `${name}: ${formatted || "(no values)"}`;
+                }).join("   ·   ");
+                label.append(caseName);
+                if (summary && showPredefinedInputs) {
+                    const inputs = document.createElement("span");
+                    inputs.className = "simulation-case-inputs";
+                    inputs.textContent = summary;
+                    label.append("  ", inputs);
+                }
                 section.appendChild(label);
                 body.appendChild(section);
             }
@@ -747,7 +749,7 @@ export function initSimulationPanel() {
                 const name = column.name;
                 const cell = document.createElement("td");
                 const isInputRow = row.shape instanceof InputOutput && row.shape.inputOutputType === "input";
-                const previousRow = visibleRows[rowIndex - 1];
+                const previousRow = visibleRows[rowIndex - 1]?.scenario === row.scenario ? visibleRows[rowIndex - 1] : undefined;
                 const hasChanged = previousRow && !valuesEqual(previousRow.variables[name], row.variables[name]);
                 const fallbackReason = !isInputRow && hasChanged &&
                     supportsReasonValue(row.variables[name])
@@ -784,10 +786,33 @@ export function initSimulationPanel() {
         tableWrapper.scrollTop = tableWrapper.scrollHeight;
     };
 
+    toggleInputsButton.addEventListener("click", () => {
+        showPredefinedInputs = !showPredefinedInputs;
+        const action = showPredefinedInputs ? "Hide" : "Show";
+        toggleInputsButton.textContent = `${action} inputs`;
+        toggleInputsButton.title = `${action} predefined inputs in case headers`;
+        toggleInputsButton.setAttribute("aria-label", `${action} predefined inputs`);
+        toggleInputsButton.setAttribute("aria-expanded", String(showPredefinedInputs));
+        renderTable();
+    });
+
     const renderWholeOutput = () => {
-        wholeOutputContent.textContent = wholeOutput.length > 0
-            ? wholeOutput.map((value) => display(value, settings.valueAccuracy)).join("\n")
-            : "No output.";
+        wholeOutputContent.replaceChildren();
+        if (wholeOutputCases.length > 0) {
+            wholeOutputCases.forEach(({ name, values }) => {
+                const heading = document.createElement("strong");
+                heading.textContent = `${name}:`;
+                const output = document.createElement("div");
+                output.textContent = values.length > 0
+                    ? values.map((value) => display(value, settings.valueAccuracy)).join("\n")
+                    : "No output.";
+                wholeOutputContent.append(heading, output);
+            });
+        } else {
+            wholeOutputContent.textContent = wholeOutput.length > 0
+                ? wholeOutput.map((value) => display(value, settings.valueAccuracy)).join("\n")
+                : "No output.";
+        }
         wholeOutputPanel.hidden = false;
     };
 
@@ -815,6 +840,7 @@ export function initSimulationPanel() {
         previousConnection = null;
         lastOutput = "";
         wholeOutput = [];
+        wholeOutputCases = [];
         rows = [];
         executedSteps = 0;
         inputIndexes = {};
@@ -1021,6 +1047,7 @@ export function initSimulationPanel() {
         previousConnection = null;
         lastOutput = "";
         wholeOutput = [];
+        wholeOutputCases = [];
         rows = [];
         executedSteps = 0;
         inputIndexes = {};
@@ -1051,6 +1078,7 @@ export function initSimulationPanel() {
                 : [{ name: "Case 1", inputs: originalInputs }];
             const combinedRows: SimulationRow[] = [];
             const combinedOutput: unknown[] = [];
+            const combinedOutputCases: Array<{ name: string; values: unknown[] }> = [];
             for (const scenario of scenarios) {
                 currentScenario = scenario.name;
                 settings.inputs = scenario.inputs;
@@ -1062,13 +1090,16 @@ export function initSimulationPanel() {
                 if (status.classList.contains("error") || status.textContent !== "Finished") break;
                 combinedRows.push(...rows);
                 combinedOutput.push(...wholeOutput);
+                combinedOutputCases.push({ name: scenario.name, values: [...wholeOutput] });
                 rows = [...combinedRows];
                 wholeOutput = [...combinedOutput];
+                wholeOutputCases = [...combinedOutputCases];
                 renderTable();
             }
             currentScenario = "";
             rows = [...combinedRows];
             wholeOutput = [...combinedOutput];
+            wholeOutputCases = [...combinedOutputCases];
             finished = combinedRows.length > 0 && !status.classList.contains("error") && status.textContent === "Finished";
             if (finished) renderWholeOutput();
         } catch (error) {
@@ -1101,7 +1132,6 @@ export function initSimulationPanel() {
         updateConfigureInputsVisibility();
         renderTable();
         if (!wholeOutputPanel.hidden) renderWholeOutput();
-        renderInputsPreview();
     });
 
     const autorun = () => {
